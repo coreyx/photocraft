@@ -289,7 +289,10 @@ fn read_loop(mut reader: impl Read, ctx: &LinkContext, shared: &Shared, outgoing
         let frame = match frame::read_frame(&mut reader, ctx.limits) {
             Ok(Some(frame)) => frame,
             Ok(None) => {
-                shared.finish("the plug-in closed its connection".into());
+                // Output usually closes because the process is exiting; its exit code says more
+                // than "closed", so give it a moment to finish.
+                let reason = exit_soon(child).map_or_else(|| "the plug-in closed its connection".to_string(), |how| format!("the plug-in {how}"));
+                shared.finish(reason);
                 return;
             }
             Err(e) => {
@@ -327,6 +330,20 @@ fn read_loop(mut reader: impl Read, ctx: &LinkContext, shared: &Shared, outgoing
         if !internal && !shared.emit(HostEvent::Frame { plugin: ctx.plugin.clone(), frame }) {
             return;
         }
+    }
+}
+
+/// Wait up to half a second for the process to exit; its exit description if it did.
+fn exit_soon(child: &Mutex<Box<dyn ChildHandle>>) -> Option<String> {
+    let deadline = Instant::now() + Duration::from_millis(500);
+    loop {
+        if let Some(how) = child.lock().unwrap_or_else(PoisonError::into_inner).try_wait() {
+            return Some(how);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
