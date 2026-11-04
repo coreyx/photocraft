@@ -16,6 +16,7 @@
 //! - [`event`]: every event the host sends.
 //! - [`widget`]: the widget trees plug-ins describe and the host draws natively.
 //! - [`types`]: shared value types (rectangles, pixel formats, document and layer info).
+//! - [`host`]: the host's view of its plug-ins (status, and the interface the UI drives them by).
 //!
 //! The full protocol reference is `docs/process-plugins.md`.
 #![forbid(unsafe_code)]
@@ -23,6 +24,7 @@
 
 pub mod event;
 pub mod frame;
+pub mod host;
 pub mod message;
 pub mod method;
 pub mod types;

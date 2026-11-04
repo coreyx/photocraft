@@ -73,6 +73,7 @@ pub use state::{Tool, UiState};
 mod app;
 mod input;
 mod prefs;
+mod process_plugins;
 mod services;
 #[cfg(not(target_arch = "wasm32"))]
 mod smart_svg_ui;
@@ -384,6 +385,8 @@ pub struct PhotocraftApp {
     pub(crate) remove_pending: Vec<serde_json::Value>,
     pub(crate) remove_pending_target: Option<retouch_ui::RemoveTarget>,
     pub(crate) remove_trail: Option<stroke_trail::Trail>,
+    /// Whether `Services::process_plugins` has been started (on the first frame).
+    pub(crate) process_plugins_started: bool,
     /// The open menus' items, reused between frames (`menus::ItemCache`).
     pub(crate) menu_cache: Option<menus::ItemCache>,
     /// Move tool drag shown live (`move_ui`).

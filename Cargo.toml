@@ -33,6 +33,7 @@ photocraft-format = { path = "crates/format" }
 photocraft-automation = { path = "crates/automation" }
 photocraft-plugins = { path = "crates/plugins" }
 photocraft-process-plugin-protocol = { path = "crates/process-plugin-protocol" }
+photocraft-process-plugin-host = { path = "crates/process-plugin-host" }
 photocraft-engine = { path = "crates/engine" }
 photocraft-ui-egui = { path = "crates/ui-egui" }
 photocraft-testkit = { path = "crates/testkit" }

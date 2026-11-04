@@ -40,6 +40,9 @@ clap = { workspace = true }
 thiserror = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Process plug-ins: launched and supervised separate programs (process_plugins.rs).
+photocraft-process-plugin-host = { workspace = true }
+photocraft-process-plugin-protocol = { workspace = true }
 tempfile = "=3.27.0"
 roxmltree = "0.21"
 craft-update = { workspace = true }

@@ -455,6 +455,9 @@ pub struct Services {
     pub alert: Option<fn()>,
     /// Starts a background check for published releases (desktop, outside Flatpak).
     pub check_updates: Option<photocraft_engine::updates_cmds::CheckFn>,
+    /// Process plug-ins: separate programs that add features through panels and document access
+    /// (desktop only; `photocraft-process-plugin-host`). `None` in the web build and in tests.
+    pub process_plugins: Option<Box<dyn photocraft_process_plugin_protocol::host::ProcessPluginHost>>,
     /// Files delivered asynchronously (web drag-and-drop): drained every frame and opened as
     /// documents.
     pub inbox: Option<Inbox>,

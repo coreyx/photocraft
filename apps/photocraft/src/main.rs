@@ -60,6 +60,7 @@ mod photoshop_settings;
 #[cfg(target_os = "linux")]
 mod portal_save;
 mod presentation;
+mod process_plugins;
 // The print portal needs the session bus (zbus, Linux only); its pure helpers are tested everywhere.
 #[cfg(any(target_os = "linux", test))]
 mod print_portal;
@@ -501,6 +502,7 @@ fn main() -> eframe::Result {
             created_in_callback.store(true, std::sync::atomic::Ordering::Relaxed);
             let automation = control.as_ref().map(|(_, _, workspace)| workspace.clone());
             let mut services = services::native(automation);
+            services.process_plugins = process_plugins::manager();
             services.preset_store = presets;
             #[cfg(target_os = "linux")]
             let display = tablet::DisplayKind::of(cc);

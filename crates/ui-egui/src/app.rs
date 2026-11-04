@@ -58,6 +58,7 @@ impl PhotocraftApp {
             remove_pending: Vec::new(),
             remove_pending_target: None,
             remove_trail: None,
+            process_plugins_started: false,
             menu_cache: None,
             move_preview: None,
             move_hover: None,
@@ -231,6 +232,7 @@ impl eframe::App for PhotocraftApp {
         // callback is inert afterwards (it holds only a weak slot).
         let finished = self.captures.cancel_all("the application is closing");
         self.finish_captures(finished);
+        self.shutdown_process_plugins();
     }
 
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {

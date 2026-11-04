@@ -5020,6 +5020,8 @@ dependencies = [
  "photocraft-format",
  "photocraft-geom",
  "photocraft-io",
+ "photocraft-process-plugin-host",
+ "photocraft-process-plugin-protocol",
  "photocraft-raster",
  "photocraft-tablet",
  "photocraft-ui-egui",
@@ -5358,6 +5360,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "photocraft-process-plugin-host"
+version = "0.20.1"
+dependencies = [
+ "getrandom 0.3.4",
+ "log",
+ "photocraft-process-plugin-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "photocraft-process-plugin-protocol"
 version = "0.20.1"
 dependencies = [
@@ -5471,6 +5486,7 @@ dependencies = [
  "photocraft-io",
  "photocraft-paint",
  "photocraft-plugins",
+ "photocraft-process-plugin-protocol",
  "photocraft-psd",
  "photocraft-raster",
  "photocraft-raw",
