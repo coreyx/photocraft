@@ -5358,6 +5358,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "photocraft-process-plugin-protocol"
+version = "0.20.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "photocraft-psd"
 version = "0.20.1"
 dependencies = [

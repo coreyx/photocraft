@@ -46,6 +46,9 @@ pub const TABLE: &[(&str, Class)] = &[
     ("raw", Class::Standalone),
     ("affinity", Class::Standalone),
     ("adobe-assets", Class::Standalone),
+    // Process plug-in wire protocol (message types and frame codec), shared by the engine, the UI
+    // and the app; depends on nothing in the workspace.
+    ("process-plugin-protocol", Class::Standalone),
     // Pen tablet input (the one isolated `unsafe` helper: AppKit interop on macOS).
     ("tablet", Class::Standalone),
     ("doc", Class::Layer(1)),
