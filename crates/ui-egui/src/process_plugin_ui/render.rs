@@ -478,7 +478,11 @@ fn image(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     if flag(n, "interactive", false)
         && let Some(pos) = response.interact_pointer_pos()
     {
-        let action = if response.drag_started() || response.clicked() {
+        // A click is one event (press and release where it happened); a drag is a press, moves
+        // and a release.
+        let action = if response.clicked() || response.secondary_clicked() {
+            "click"
+        } else if response.drag_started() {
             "press"
         } else if response.drag_stopped() {
             "release"
@@ -780,8 +784,14 @@ fn text_edit(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
         let job = highlighted(ui, buf.as_str(), spans.as_ref(), wrap_width);
         ui.fonts_mut(|f| f.layout_job(job))
     };
+    // The keys the plug-in asked for are taken before the field sees them (Ctrl+Up would move
+    // the cursor, Shift+Enter add a line).
+    let edit_id = ui.make_persistent_id(("plugin-text", &n.id));
+    if ui.memory(|m| m.has_focus(edit_id)) {
+        forward_keys(ui, n, cx);
+    }
     let output = egui::TextEdit::multiline(&mut value)
-        .id_salt(("plugin-text", &n.id))
+        .id(edit_id)
         .hint_text(text(n, "placeholder"))
         .interactive(!flag(n, "readOnly", false))
         .desired_rows(rows)
@@ -808,10 +818,12 @@ fn text_edit(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
             let mut chosen = None;
             egui::Area::new(ui.scope_id().with(("plugin-completions", &n.id))).order(egui::Order::Foreground).fixed_pos(at).show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    // The plug-in moves the highlight (`completionIndex`) when it has the arrow keys.
+                    let current = prop(n, "completionIndex").and_then(Value::as_u64);
                     for (i, entry) in list.iter().take(50).enumerate() {
                         let label =
                             entry.as_str().map(str::to_string).or_else(|| entry.get("text").and_then(Value::as_str).map(str::to_string)).unwrap_or_default();
-                        if ui.add(egui::Button::selectable(false, label)).clicked() {
+                        if ui.add(egui::Button::selectable(current == Some(i as u64), label)).clicked() {
                             chosen = Some(i);
                         }
                     }
@@ -833,6 +845,11 @@ fn text_edit(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
                 let new = (rows as i64 + delta).clamp(min_lines as i64, max_lines as i64);
                 cx.set(n, "lines", json!(new));
             }
+        }
+        if resp.drag_stopped() {
+            // The plug-in may keep the size (as a setting): tell it once the drag ends.
+            let lines = cx.get(n, "lines").and_then(|v| v.as_u64()).unwrap_or(rows as u64);
+            cx.emit(ui, n, InputKind::Change, json!({"lines": lines}));
         }
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
@@ -946,28 +963,73 @@ fn menu_of_key<'a>(n: &'a Node, cx: &Cx<'a>, key: &str) -> Option<Vec<Value>> {
     }
 }
 
+/// The key chords a widget's `keys` prop names (`"Ctrl+Up"`, `"Shift+Enter"`, `"Delete"`), with
+/// the most modifiers first: egui ignores extra Shift and Alt when matching, so `Shift+Enter`
+/// must be tried before `Enter`.
+fn key_chords(n: &Node) -> Vec<(egui::Modifiers, egui::Key, String)> {
+    let mut chords = Vec::new();
+    for chord in prop(n, "keys").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        let mut parts: Vec<&str> = chord.split('+').collect();
+        let Some(name) = parts.pop() else { continue };
+        let mut modifiers = egui::Modifiers::NONE;
+        let mut known = true;
+        for part in parts {
+            match part.to_ascii_lowercase().as_str() {
+                // Ctrl is Command on macOS, as in Qt.
+                "ctrl" | "cmd" => modifiers |= egui::Modifiers::COMMAND,
+                "shift" => modifiers |= egui::Modifiers::SHIFT,
+                "alt" => modifiers |= egui::Modifiers::ALT,
+                _ => known = false,
+            }
+        }
+        let key = egui::Key::from_name(if name == "Return" { "Enter" } else { name });
+        if let (true, Some(key)) = (known, key) {
+            chords.push((modifiers, key, name.to_string()));
+        }
+    }
+    chords.sort_by_key(|(m, ..)| std::cmp::Reverse(u8::from(m.command) + u8::from(m.shift) + u8::from(m.alt)));
+    chords
+}
+
+/// Take this frame's presses of the widget's `keys` out of the input and send each as a `key`
+/// event (its name; the modifiers come with the event). Those keys mean something to the
+/// plug-in (Ctrl+Up re-weights a prompt, Delete discards a result) rather than to the widget.
+fn forward_keys(ui: &Ui, n: &Node, cx: &mut Cx<'_>) {
+    for (modifiers, key, name) in key_chords(n) {
+        if ui.input_mut(|i| i.consume_key(modifiers, key)) {
+            cx.emit(ui, n, InputKind::Key, json!(name));
+        }
+    }
+}
+
 fn list(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     let order = item_order(n, cx);
     let selected = selected_ids(n, cx);
     let by_id: HashMap<&str, &Value> = items(n).iter().map(|i| (item_str(i, "id"), i)).collect();
-    ui.vertical(|ui| {
-        for id in &order {
-            let Some(item) = by_id.get(id.as_str()) else { continue };
-            let r = ui.horizontal(|ui| {
-                if let Some(icon) = item.get("icon").and_then(Value::as_str) {
-                    let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-                    paint_icon(ui, rect, icon, cx);
+    let r = ui
+        .vertical(|ui| {
+            for id in &order {
+                let Some(item) = by_id.get(id.as_str()) else { continue };
+                let r = ui.horizontal(|ui| {
+                    if let Some(icon) = item.get("icon").and_then(Value::as_str) {
+                        let (rect, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+                        paint_icon(ui, rect, icon, cx);
+                    }
+                    ui.add(egui::Button::selectable(selected.contains(id), item_str(item, "text")).sense(Sense::click_and_drag()))
+                });
+                let mut r = r.inner;
+                if let Some(tip) = item.get("tooltip").and_then(Value::as_str) {
+                    r = r.on_hover_text(tip);
                 }
-                ui.add(egui::Button::selectable(selected.contains(id), item_str(item, "text")).sense(Sense::click_and_drag()))
-            });
-            let mut r = r.inner;
-            if let Some(tip) = item.get("tooltip").and_then(Value::as_str) {
-                r = r.on_hover_text(tip);
+                item_interaction(ui, n, cx, &r, id, &order);
             }
-            item_interaction(ui, n, cx, &r, id, &order);
-        }
-    })
-    .response
+        })
+        .response;
+    // A list has no keyboard focus of its own: its keys apply while the pointer is over it.
+    if r.contains_pointer() {
+        forward_keys(ui, n, cx);
+    }
+    r
 }
 
 fn thumb_grid(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
@@ -976,42 +1038,59 @@ fn thumb_grid(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     let size = num(n, "thumbSize", 96.0).clamp(16.0, 512.0) as f32;
     let t = Tokens::get(ui.ctx());
     let by_id: HashMap<&str, &Value> = items(n).iter().map(|i| (item_str(i, "id"), i)).collect();
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-        for id in &order {
-            let Some(item) = by_id.get(id.as_str()) else { continue };
-            let (rect, mut r) = ui.allocate_exact_size(vec2(size, size), Sense::click_and_drag());
-            // Off-screen thumbnails keep their place without drawing (hundreds of results).
-            if ui.is_rect_visible(rect) {
-                let painter = ui.painter_at(rect);
-                painter.rect_filled(rect, t.radius_sm, t.field);
-                if let Some(texture) = cx.images.texture(ui.ctx(), cx.plugin, item_str(item, "image")) {
-                    let natural = texture.size_vec2();
-                    let k = (rect.width() / natural.x).min(rect.height() / natural.y);
-                    let shown = Rect::from_center_size(rect.center(), natural * k);
-                    painter.image(texture.id(), shown, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+    let r = ui
+        .horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+            for id in &order {
+                let Some(item) = by_id.get(id.as_str()) else { continue };
+                if item_str(item, "kind") == "header" {
+                    // A header (a batch's time and prompt) takes a row of its own.
+                    ui.end_row();
+                    let label = egui::Button::selectable(selected.contains(id), item_str(item, "text")).sense(Sense::click_and_drag());
+                    let mut r = ui.add_sized(vec2(ui.available_width(), 18.0), label);
+                    if let Some(tip) = item.get("tooltip").and_then(Value::as_str) {
+                        r = r.on_hover_text(tip);
+                    }
+                    item_interaction(ui, n, cx, &r, id, &order);
+                    ui.end_row();
+                    continue;
                 }
-                let overlay = item_str(item, "overlay");
-                if !overlay.is_empty() {
-                    let font = egui::FontId::proportional(11.0);
-                    let galley = painter.layout_no_wrap(overlay.to_string(), font, egui::Color32::WHITE);
-                    let bg = Rect::from_min_size(rect.left_bottom() - vec2(0.0, galley.size().y + 4.0), vec2(galley.size().x + 8.0, galley.size().y + 4.0));
-                    painter.rect_filled(bg, 0.0, egui::Color32::from_black_alpha(160));
-                    painter.galley(bg.min + vec2(4.0, 2.0), galley, egui::Color32::WHITE);
+                let (rect, mut r) = ui.allocate_exact_size(vec2(size, size), Sense::click_and_drag());
+                // Off-screen thumbnails keep their place without drawing (hundreds of results).
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter_at(rect);
+                    painter.rect_filled(rect, t.radius_sm, t.field);
+                    if let Some(texture) = cx.images.texture(ui.ctx(), cx.plugin, item_str(item, "image")) {
+                        let natural = texture.size_vec2();
+                        let k = (rect.width() / natural.x).min(rect.height() / natural.y);
+                        let shown = Rect::from_center_size(rect.center(), natural * k);
+                        painter.image(texture.id(), shown, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                    }
+                    let overlay = item_str(item, "overlay");
+                    if !overlay.is_empty() {
+                        let font = egui::FontId::proportional(11.0);
+                        let galley = painter.layout_no_wrap(overlay.to_string(), font, egui::Color32::WHITE);
+                        let bg = Rect::from_min_size(rect.left_bottom() - vec2(0.0, galley.size().y + 4.0), vec2(galley.size().x + 8.0, galley.size().y + 4.0));
+                        painter.rect_filled(bg, 0.0, egui::Color32::from_black_alpha(160));
+                        painter.galley(bg.min + vec2(4.0, 2.0), galley, egui::Color32::WHITE);
+                    }
+                    if selected.contains(id) {
+                        painter.rect_stroke(rect.shrink(1.0), t.radius_sm, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
+                    } else if r.hovered() {
+                        painter.rect_stroke(rect.shrink(0.5), t.radius_sm, egui::Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
+                    }
                 }
-                if selected.contains(id) {
-                    painter.rect_stroke(rect.shrink(1.0), t.radius_sm, egui::Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
-                } else if r.hovered() {
-                    painter.rect_stroke(rect.shrink(0.5), t.radius_sm, egui::Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
+                if let Some(tip) = item.get("tooltip").and_then(Value::as_str) {
+                    r = r.on_hover_text(tip);
                 }
+                item_interaction(ui, n, cx, &r, id, &order);
             }
-            if let Some(tip) = item.get("tooltip").and_then(Value::as_str) {
-                r = r.on_hover_text(tip);
-            }
-            item_interaction(ui, n, cx, &r, id, &order);
-        }
-    })
-    .response
+        })
+        .response;
+    if r.contains_pointer() {
+        forward_keys(ui, n, cx);
+    }
+    r
 }
 
 // ----------------------------------------------------------------------------- pop-ups

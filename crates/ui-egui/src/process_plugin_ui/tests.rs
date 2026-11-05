@@ -262,6 +262,59 @@ fn the_image_cache_keeps_valid_images_within_its_budget() {
     assert!(!cache.contains(P, "big0"), "the oldest went first");
 }
 
+/// A text field hands the keys the plug-in asked for to the plug-in instead of editing with them
+/// (Ctrl+Up re-weights a prompt, Shift+Enter generates), and leaves every other key alone.
+#[test]
+fn a_text_field_forwards_the_keys_it_was_given() {
+    let prompt = Node::new("prompt", WidgetKind::TextEdit)
+        .prop("text", "a cat")
+        .prop("keys", json!(["Ctrl+Up", "Enter", "Shift+Enter"]))
+        .prop("completions", json!(["cat ears", "catgirl"]))
+        .prop("completionIndex", 1);
+    let mut h = harness(Node::new("root", WidgetKind::Column).child(prompt));
+    h.query_all_by_role(Role::MultilineTextInput).next().unwrap().click();
+    h.run_steps(2);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::ArrowUp);
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
+    h.key_press(egui::Key::Enter);
+    h.run_steps(2);
+    let keys: Vec<_> = events_of(&h, "prompt")
+        .into_iter()
+        .filter(|e| e.kind == InputKind::Key)
+        .map(|e| (e.value.clone(), e.modifiers.shift, e.modifiers.ctrl || e.modifiers.meta))
+        .collect();
+    assert_eq!(keys, vec![(json!("Up"), false, true), (json!("Enter"), true, false), (json!("Enter"), false, false)]);
+    assert!(!events_of(&h, "prompt").iter().any(|e| e.kind == InputKind::Change), "forwarded keys don't edit the text");
+    // Other keys still type.
+    h.query_all_by_role(Role::MultilineTextInput).next().unwrap().type_text("!");
+    h.run_steps(2);
+    assert!(events_of(&h, "prompt").iter().any(|e| e.kind == InputKind::Change));
+}
+
+/// A list's keys apply while the pointer is over it; a thumbnail grid's header items take a row
+/// of their own and can be clicked like thumbnails.
+#[test]
+fn lists_forward_keys_and_grids_show_headers() {
+    let items = json!([
+        {"id": "h1", "kind": "header", "text": "12:00 - a cat", "tooltip": "a cat"},
+        {"id": "r1", "image": "image:thumb"},
+        {"id": "r2", "image": "image:thumb"}
+    ]);
+    let grid = Node::new("history", WidgetKind::ThumbGrid).prop("items", items).prop("keys", json!(["Delete", "Space"])).prop("thumbSize", 48);
+    let mut h = harness(Node::new("root", WidgetKind::Column).child(grid));
+    h.get_by_label("12:00 - a cat").click();
+    h.run_steps(2);
+    let history = events_of(&h, "history");
+    assert_eq!((history[0].kind, history[0].value.clone()), (InputKind::Select, json!(["h1"])));
+    h.get_by_label("12:00 - a cat").hover();
+    h.run_steps(1);
+    h.key_press(egui::Key::Delete);
+    h.key_press(egui::Key::Space);
+    h.run_steps(2);
+    let keys: Vec<_> = events_of(&h, "history").into_iter().filter(|e| e.kind == InputKind::Key).map(|e| e.value.clone()).collect();
+    assert_eq!(keys, vec![json!("Delete"), json!("Space")]);
+}
+
 /// REQ-5.5: a 200-thumbnail result list scrolls at 60 fps. Run in release on the reference
 /// machine: `cargo test -p photocraft-ui-egui --release -- --ignored thumbnail_list_timing --nocapture`.
 #[test]

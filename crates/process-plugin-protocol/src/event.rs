@@ -122,7 +122,9 @@ pub enum InputKind {
     Drag,
     /// The text cursor or text selection moved (`value` is `{ "anchor": n, "cursor": n }`).
     Cursor,
-    /// A pointer event on an image widget (`value` is `{ "x", "y", "button", "action" }`).
+    /// A pointer event on an image widget (`value` is `{ "x", "y", "button", "action" }`, in
+    /// the image's own points; `action` is `"click"`, or `"press"`, `"move"` and `"release"` for
+    /// a drag).
     Pointer,
     /// The widget gained or lost focus (`value` is a boolean).
     Focus,

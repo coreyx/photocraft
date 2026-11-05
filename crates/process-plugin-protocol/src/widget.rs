@@ -135,16 +135,20 @@ pub enum WidgetKind {
     /// A single-line text field (`text`, `placeholder`, `password`).
     LineEdit,
     /// Multi-line text (`text`, `placeholder`, `readOnly`, `spans` for highlighting,
-    /// `completions` for a pop-up list, `minLines`, `maxLines`, `resizable`).
+    /// `completions` for a pop-up list with `completionIndex` highlighted, `minLines`,
+    /// `maxLines`, `resizable` (a grip; when a drag ends it sends `change` with `{lines}`), and
+    /// `keys`: chords such as `"Ctrl+Up"` or `"Shift+Enter"` that are sent to the plug-in as
+    /// `key` events instead of editing the text).
     TextEdit,
     /// A path field with a browse button (`text`, `mode`: "open" | "save" | "folder", `filters`).
     PathField,
     // collections
     /// A list (`items`: [{id, text, icon, tooltip}], `selected`, `selectionMode`, `reorderable`,
-    /// `contextMenu`).
+    /// `contextMenu`, and `keys` sent as `key` events while the pointer is over it).
     List,
-    /// A grid of thumbnails (`items`: [{id, image, overlay, tooltip}], `selected`,
-    /// `selectionMode`, `thumbSize`, `contextMenu`).
+    /// A grid of thumbnails (`items`: [{id, image, overlay, tooltip}], or `{id, kind: "header",
+    /// text, tooltip}` for a row of text; `selected`, `selectionMode`, `thumbSize`,
+    /// `contextMenu`, `keys`).
     ThumbGrid,
     /// A vertical list of child rows that are themselves widget trees (regions, control layers).
     Repeater,

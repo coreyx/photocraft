@@ -305,6 +305,13 @@ widget of every kind.
 A change the user makes shows at once and is sent as an input event; it stays until the plug-in
 sets that prop again, which confirms or corrects it.
 
+A `textEdit`, `list` or `thumbGrid` can claim keys with a `keys` prop: a list of chords such as
+`"Ctrl+Up"`, `"Shift+Enter"`, `"Tab"` or `"Delete"` (Ctrl is Command on macOS). A claimed key is
+sent as a `key` event, its name as the value and the modifiers with the event, instead of doing
+what the widget would do with it: a text field takes them while it has focus, a list while the
+pointer is over it. A plug-in uses this for its own shortcuts, such as moving through the
+`completions` of a text field (and setting `completionIndex`).
+
 ## Actions
 
 | Method | Params | Result |
