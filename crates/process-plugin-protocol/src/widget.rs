@@ -171,3 +171,116 @@ pub enum Patch {
     /// Move a node to be the `index`-th child of `parent`.
     Move { id: String, parent: String, index: usize },
 }
+
+/// A panel holding one widget of every [`WidgetKind`], with the props each kind reads: what the
+/// host's renderer tests, snapshots and the echo test plug-in draw, and a worked example of
+/// the vocabulary.
+pub fn gallery() -> Node {
+    use WidgetKind as K;
+    use serde_json::json;
+    let n = Node::new;
+    let menu =
+        n("menu", K::Menu).prop("items", json!([{"id": "copy", "text": "Copy"}, {"id": "more", "text": "More", "items": [{"id": "deep", "text": "Deeper"}]}]));
+    let combo_items = json!([
+        {"kind": "header", "text": "Models"},
+        {"id": "sdxl", "text": "SDXL"},
+        {"id": "flux", "text": "Flux"},
+        {"kind": "separator"},
+        {"id": "custom", "text": "Custom…"}
+    ]);
+    let list_items = json!([{"id": "a", "text": "Region A", "tooltip": "First"}, {"id": "b", "text": "Region B"}, {"id": "c", "text": "Region C"}]);
+    let thumbs = json!([{"id": "r1", "image": "image:thumb", "overlay": "1"}, {"id": "r2", "image": "image:thumb", "overlay": "2"}]);
+    let spans = json!([{"start": 0, "end": 4, "color": "#d08770"}, {"start": 10, "end": 14, "color": "#88c0d0", "italic": true}]);
+    n("root", K::Column).child(menu).child(
+        n("tabs", K::Tabs)
+            .prop("current", 0)
+            .child(
+                n("page-inputs", K::Column)
+                    .prop("title", "Inputs")
+                    .child(
+                        n("buttons", K::Row)
+                            .child(n("button", K::Button).prop("text", "Generate").prop("default", true).prop("tooltip", "Generate an image"))
+                            .child(n("tool", K::ToolButton).prop("text", "Tools").prop("menu", "menu"))
+                            .child(n("toggle", K::ToggleButton).prop("text", "Live"))
+                            .child(n("split", K::SplitButton).prop("text", "Queue").prop("menu", json!([{"id": "front", "text": "Front of queue"}]))),
+                    )
+                    .child(
+                        n("form", K::Form)
+                            .child(n("strength-label", K::Label).prop("text", "Strength"))
+                            .child(n("strength", K::SliderSpin).prop("min", 0).prop("max", 100).prop("value", 60).prop("suffix", "%"))
+                            .child(n("steps-label", K::Label).prop("text", "Steps"))
+                            .child(n("steps", K::Spin).prop("min", 1).prop("max", 100).prop("value", 20))
+                            .child(n("cfg-label", K::Label).prop("text", "Guidance"))
+                            .child(n("cfg", K::Slider).prop("min", 1).prop("max", 20).prop("value", 7).prop("float", true))
+                            .child(n("model-label", K::Label).prop("text", "Model"))
+                            .child(n("model", K::Combo).prop("items", combo_items).prop("value", "sdxl")),
+                    )
+                    .child(n("check", K::Checkbox).prop("text", "Seed fixed"))
+                    .child(n("switch", K::Switch).prop("text", "Advanced"))
+                    .child(
+                        n("radio", K::RadioGroup).prop("items", json!([{"id": "fast", "text": "Fast"}, {"id": "best", "text": "Best"}])).prop("value", "fast"),
+                    )
+                    .child(n("line", K::LineEdit).prop("placeholder", "Negative prompt"))
+                    .child(
+                        n("prompt", K::TextEdit)
+                            .prop("text", "cat, sitting on a mat")
+                            .prop("spans", spans)
+                            .prop("minLines", 2)
+                            .prop("maxLines", 6)
+                            .prop("resizable", true),
+                    )
+                    .child(n("path", K::PathField).prop("text", "").prop("mode", "folder")),
+            )
+            .child(
+                n("page-display", K::Column)
+                    .prop("title", "Display")
+                    .child(n("label", K::Label).prop("text", "Plain label").prop("wrap", true))
+                    .child(n("rich", K::Label).prop("format", "rich").prop("text", "<b>Bold</b> and <a href=\"https://example.com\">a link</a>"))
+                    .child(n("icon", K::Icon).prop("icon", "icon:lock").prop("size", 16))
+                    .child(n("image", K::Image).prop("image", "image:thumb").prop("width", 64).prop("height", 64).prop("interactive", true))
+                    .child(n("progress", K::Progress).prop("value", 0.4).prop("text", "40%"))
+                    .child(n("busy", K::Progress))
+                    .child(n("sep", K::Separator)),
+            )
+            .child(
+                n("page-layout", K::Column)
+                    .prop("title", "Layout")
+                    .child(
+                        n("grid", K::Grid)
+                            .child(n("g00", K::Label).prop("text", "A").prop("row", 0).prop("col", 0))
+                            .child(n("g01", K::Label).prop("text", "B").prop("row", 0).prop("col", 1))
+                            .child(n("g10", K::Label).prop("text", "C").prop("row", 1).prop("col", 0)),
+                    )
+                    .child(n("group", K::Group).prop("title", "Group").child(n("in-group", K::Label).prop("text", "Inside")))
+                    .child(
+                        n("collapsible", K::Collapsible)
+                            .prop("title", "History")
+                            .prop("expanded", true)
+                            .child(n("in-collapse", K::Label).prop("text", "Hidden")),
+                    )
+                    .child(
+                        n("stack", K::Stack).prop("current", 1).child(n("s0", K::Label).prop("text", "Page 0")).child(n("s1", K::Label).prop("text", "Page 1")),
+                    )
+                    .child(n("scroll", K::Scroll).prop("maxHeight", 60).child(n("in-scroll", K::Label).prop("text", "Scrolled")))
+                    .child(
+                        n("splitter", K::Splitter)
+                            .child(n("pane-a", K::Label).prop("text", "Top pane"))
+                            .child(n("pane-b", K::Label).prop("text", "Bottom pane")),
+                    )
+                    .child(n("spacer", K::Spacer).prop("size", 8))
+                    .child(n("popup-anchor", K::Button).prop("text", "Options"))
+                    .child(n("popup", K::Popup).prop("anchor", "popup-anchor").prop("open", false).child(n("in-popup", K::Label).prop("text", "Pop-up"))),
+            )
+            .child(
+                n("page-collections", K::Column)
+                    .prop("title", "Collections")
+                    .child(n("list", K::List).prop("items", list_items).prop("selectionMode", "multi").prop("reorderable", true).prop("contextMenu", "menu"))
+                    .child(n("thumbs", K::ThumbGrid).prop("items", thumbs).prop("thumbSize", 48).prop("contextMenu", "menu"))
+                    .child(
+                        n("repeater", K::Repeater)
+                            .child(n("row-1", K::Row).child(n("row-1-label", K::Label).prop("text", "Region 1")))
+                            .child(n("row-2", K::Row).child(n("row-2-label", K::Label).prop("text", "Region 2"))),
+                    ),
+            ),
+    )
+}

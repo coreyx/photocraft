@@ -74,6 +74,7 @@ mod app;
 mod input;
 mod prefs;
 mod process_plugin_services;
+pub mod process_plugin_ui;
 mod process_plugins;
 mod services;
 #[cfg(not(target_arch = "wasm32"))]
@@ -390,6 +391,8 @@ pub struct PhotocraftApp {
     pub(crate) process_plugins_started: bool,
     /// Plug-ins' progress indicators in the status bar (`process_plugin_services`).
     pub(crate) process_plugin_progress: Vec<process_plugin_services::PluginProgress>,
+    /// Process plug-ins' panel and dialog trees and their images (`process_plugin_ui`).
+    pub(crate) process_plugin_ui: process_plugin_ui::PluginUi,
     /// The UI language plug-ins were last told about (`locale.changed`).
     pub(crate) process_plugin_locale: String,
     /// The open menus' items, reused between frames (`menus::ItemCache`).

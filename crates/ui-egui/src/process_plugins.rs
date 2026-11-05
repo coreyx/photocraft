@@ -191,7 +191,7 @@ impl PhotocraftApp {
     /// or a typed error. Responses and events need no answer.
     fn serve_plugin_frame(&mut self, ctx: &egui::Context, plugin: &str, frame: Frame) -> Option<Frame> {
         let Header::Request { id, method, params } = frame.header else { return None };
-        if let Some(answer) = self.serve_plugin_service(ctx, plugin, &method, &params) {
+        if let Some(answer) = self.serve_plugin_service(ctx, plugin, &method, &params, &frame.payload) {
             return Some(match answer {
                 Ok(result) => Frame::new(Header::Response { id, result }),
                 Err(error) => Frame::new(Header::Error { id, error }),

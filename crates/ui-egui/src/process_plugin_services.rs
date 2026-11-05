@@ -1,5 +1,6 @@
 //! The shell's services for process plug-ins: notices, opening URLs and folders, clipboard
-//! text, progress in the status bar, and telling plug-ins when the UI language changes.
+//! text, progress in the status bar, the image cache (`image.put`), and telling plug-ins when
+//! the UI language changes.
 //!
 //! Document requests go to the session's broker (`Session::plugin_request`); these need the
 //! window and the platform, so the shell answers them itself. Plug-in progress is only a status
@@ -9,7 +10,7 @@ use egui::{RichText, Sense, vec2};
 use photocraft_process_plugin_protocol::event::{self, LocaleChanged, ProgressCancel};
 use photocraft_process_plugin_protocol::frame::Frame;
 use photocraft_process_plugin_protocol::message::{ErrorBody, ErrorCode, Header, decode_value};
-use photocraft_process_plugin_protocol::method::{ClipboardText, NoticeLevel, NoticeParams, PathParams, ProgressParams, TaskRef, UrlParams};
+use photocraft_process_plugin_protocol::method::{ClipboardText, NoticeLevel, NoticeParams, PathParams, ProgressParams, PutImageParams, TaskRef, UrlParams};
 use serde_json::{Map, Value};
 
 use crate::theme::Tokens;
@@ -50,8 +51,16 @@ fn openable_url(url: &str) -> bool {
 
 impl PhotocraftApp {
     /// Answer `method` if it is one of the shell's services; `None` passes it on to the broker.
-    pub(crate) fn serve_plugin_service(&mut self, ctx: &egui::Context, plugin: &str, method: &str, p: &Value) -> Option<Result<Value, ErrorBody>> {
+    pub(crate) fn serve_plugin_service(
+        &mut self,
+        ctx: &egui::Context,
+        plugin: &str,
+        method: &str,
+        p: &Value,
+        payload: &[u8],
+    ) -> Option<Result<Value, ErrorBody>> {
         Some(match method {
+            "image.put" => self.plugin_image_put(plugin, p, payload),
             "notice.show" => self.plugin_notice(plugin, p),
             "open.url" => self.plugin_open_url(ctx, p),
             "open.path" => self.plugin_open_path(p),
@@ -61,6 +70,12 @@ impl PhotocraftApp {
             "progress.clear" => self.plugin_progress_clear(plugin, p),
             _ => return None,
         })
+    }
+
+    fn plugin_image_put(&mut self, plugin: &str, p: &Value, payload: &[u8]) -> Result<Value, ErrorBody> {
+        let p: PutImageParams = params("image.put", p)?;
+        self.process_plugin_ui.images.put(plugin, &p.hash, &p.encoding, payload).map_err(|e| ErrorBody::new(ErrorCode::Invalid, e))?;
+        Ok(empty())
     }
 
     fn plugin_notice(&mut self, plugin: &str, p: &Value) -> Result<Value, ErrorBody> {
@@ -147,9 +162,10 @@ impl PhotocraftApp {
         Ok(empty())
     }
 
-    /// Drop the progress indicators of a plug-in that stopped.
+    /// Drop the progress indicators, widget trees and images of a plug-in that stopped.
     pub(crate) fn clear_plugin_progress(&mut self, plugin: &str) {
         self.process_plugin_progress.retain(|t| t.plugin != plugin);
+        self.process_plugin_ui.drop_plugin(plugin);
     }
 
     /// Cancel was clicked on a plug-in's progress: ask the plug-in to stop that task.
