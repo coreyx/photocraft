@@ -128,6 +128,8 @@ pub struct PluginUi {
     pub images: ImageCache,
     /// Registered panels and how their input reaches the plug-in (`process_plugin_panels`).
     pub panels: crate::process_plugin_panels::Panels,
+    /// Open dialogs and waiting message boxes (`process_plugin_dialogs`).
+    pub dialogs: crate::process_plugin_dialogs::Dialogs,
 }
 
 impl PluginUi {

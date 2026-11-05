@@ -18,7 +18,7 @@ use crate::process_plugin_panels::{MAX_QUEUED, dock_id};
 const P: &str = "org.example.p";
 
 /// A host that records what the shell sends.
-struct Recorder(Arc<Mutex<Vec<(String, Frame)>>>);
+pub(crate) struct Recorder(pub(crate) Arc<Mutex<Vec<(String, Frame)>>>);
 
 impl ProcessPluginHost for Recorder {
     fn start(&mut self, _: StartSettings) {}

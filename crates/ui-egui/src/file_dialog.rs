@@ -128,6 +128,29 @@ impl PhotocraftApp {
         Ok(json!({ "fileDialog": kind }))
     }
 
+    /// [`Self::ask_file`] for a caller that must hear about a cancel too (a plug-in waiting
+    /// for its picker's answer): `then` gets `None` when the user cancelled or no dialog could
+    /// be shown.
+    pub(crate) fn ask_file_or_cancel(
+        &mut self,
+        request: FileDialogRequest,
+        then: impl FnOnce(&mut Self, Option<FileDialogAnswer>) + 'static,
+    ) -> Result<Value, String> {
+        if self.services.file_dialog.is_none() {
+            return Err("this PhotoCraft can't show file dialogs".into());
+        }
+        if self.file_dialog.is_some() {
+            return Err("a file dialog is already open".into());
+        }
+        let then: Then = Box::new(move |app, answer| {
+            let usable = answer.filter(|a| !matches!(a, FileDialogAnswer::Unavailable(_)));
+            then(app, usable);
+            Err(CANCELLED.into())
+        });
+        self.file_dialog = Some(Pending { request: Some(request), answer: None, then, saved_path: None, held: None });
+        Ok(Value::Null)
+    }
+
     /// Ask the user to choose a folder, starting in the folder of the most recent file when known.
     /// `then` receives the selected path when the dialog is answered.
     pub(crate) fn ask_folder(&mut self, then: impl FnOnce(&mut Self, String) -> Result<Value, String> + 'static) -> Result<Value, String> {

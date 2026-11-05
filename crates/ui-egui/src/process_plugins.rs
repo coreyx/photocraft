@@ -187,11 +187,20 @@ fn set_disabled(list: &mut Vec<String>, id: &str, disabled: bool) {
 }
 
 impl PhotocraftApp {
+    #[cfg(test)]
+    pub(crate) fn serve_plugin_frame_for_tests(&mut self, plugin: &str, frame: Frame) -> Option<Frame> {
+        self.serve_plugin_frame(&egui::Context::default(), plugin, frame)
+    }
+
     /// Answer a plug-in's request: the shell's own services (`process_plugin_services`), else
     /// document requests through the session's broker, which replies with a result (and payload)
     /// or a typed error. Responses and events need no answer.
     fn serve_plugin_frame(&mut self, ctx: &egui::Context, plugin: &str, frame: Frame) -> Option<Frame> {
         let Header::Request { id, method, params } = frame.header else { return None };
+        // A message box or file picker answers once the user has chosen.
+        if self.serve_plugin_deferred(plugin, id, &method, &params) {
+            return None;
+        }
         if let Some(answer) = self.serve_plugin_service(ctx, plugin, &method, &params, &frame.payload) {
             return Some(match answer {
                 Ok(result) => Frame::new(Header::Response { id, result }),
