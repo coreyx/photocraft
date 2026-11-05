@@ -283,6 +283,10 @@ fn hostile_parameters_never_panic() {
         "layerData.set",
         "preview.show",
         "preview.hide",
+        "vector.createFromSvg",
+        "vector.shapes",
+        "vector.addSvg",
+        "vector.removeShapes",
     ];
     let values = [
         Value::Null,
@@ -307,6 +311,9 @@ fn hostile_parameters_never_panic() {
         json!({"doc": doc, "uid": uid, "rect": {"x": i64::MIN, "y": -1, "width": u32::MAX, "height": 1}, "format": "rgba32f", "source": {"kind": "composite"}}),
         json!({"doc": doc, "uid": uid, "rect": {"x": 0, "y": 0, "width": 1, "height": 3}, "format": "gray8", "which": "alpha", "name": "n"}),
         json!({"topics": ["pixels.changed", "nonsense"]}),
+        json!({"doc": doc, "uid": uid, "name": "Pose", "svg": "<svg xmlns='http://www.w3.org/2000/svg'><rect width='5' height='5'/><text>x</text></svg>", "ids": ["zz", uid]}),
+        json!({"doc": doc, "uid": uid, "name": "Pose", "svg": "<svg><circle id='a' r='1e300'/></svg>"}),
+        json!({"doc": doc, "name": "Pose", "svg": "not svg at all"}),
         json!({"doc": doc, "name": "x".repeat(300), "uid": uid, "key": "\x07", "value": "v"}),
         json!({"doc": doc, "name": "ok", "uid": uid, "key": "k", "value": "y".repeat(2 << 20)}),
         json!({"topics": ["panel.input", 7]}),

@@ -5,7 +5,7 @@
 //! or a typed protocol error. This module owns the document side of the process plug-in protocol
 //! (`photocraft-process-plugin-protocol`): documents, the layer tree, pixels, selections and masks,
 //! undo groups, the change events subscribed plug-ins receive, the data plug-ins store in
-//! documents, and transient previews.
+//! documents, transient previews, and vector (pose) content.
 //!
 //! Every change a plug-in makes is an ordinary [`Session::edit`], so it is one undoable history
 //! step labelled by the plug-in, or part of one when it runs inside an undo group
@@ -33,6 +33,9 @@ mod storage_tests;
 #[cfg(test)]
 mod tests;
 mod undo;
+mod vector;
+#[cfg(test)]
+mod vector_tests;
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -98,6 +101,10 @@ impl Session {
             "undo.begin" => undo::begin(self, plugin, params),
             "undo.end" => undo::end(self, plugin, params),
             "events.subscribe" => events::subscribe(self, plugin, params),
+            "vector.createFromSvg" => vector::create(self, plugin, params),
+            "vector.shapes" => vector::shapes(self, plugin, params),
+            "vector.addSvg" => vector::add(self, plugin, params),
+            "vector.removeShapes" => vector::remove(self, plugin, params),
             "preview.show" => preview::show(self, plugin, params, payload),
             "preview.hide" => preview::hide(self, params),
             "blob.get" => storage::blob_get(self, plugin, params),
