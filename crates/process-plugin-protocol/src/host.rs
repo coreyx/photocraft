@@ -114,6 +114,14 @@ pub trait ProcessPluginHost {
     /// the plug-in id.
     fn install(&mut self, package: &str) -> Result<String, String>;
 
+    /// Install a newer package of `plugin`, at its own request (`plugin.update`): as
+    /// [`install`](Self::install), but refused unless the package's manifest is `plugin`'s, so
+    /// a plug-in can update itself and nothing else.
+    fn update(&mut self, plugin: &str, package: &str) -> Result<(), String> {
+        let _ = (plugin, package);
+        Err("this PhotoCraft can't update plug-ins".into())
+    }
+
     /// Look for newly installed or removed plug-ins and start the newly found enabled ones.
     fn rescan(&mut self);
 

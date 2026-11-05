@@ -58,6 +58,26 @@ impl PhotocraftApp {
                 }
             }
         }
+        self.apply_plugin_updates();
+    }
+
+    /// Install the packages plug-ins asked to be updated to (`plugin.update`), now that their
+    /// answers are sent: each plug-in is stopped, replaced and started again.
+    fn apply_plugin_updates(&mut self) {
+        for (plugin, package) in std::mem::take(&mut self.process_plugin_ui.updates) {
+            let name = self.process_plugin_name(&plugin);
+            match self.services.process_plugins.as_mut().map(|host| host.update(&plugin, &package)) {
+                Some(Ok(())) => {
+                    let title = i18n::fmt(tl!("Updated {name}"), &[("name", name.as_str())]);
+                    notices::post(self, title, Vec::new(), false, None);
+                }
+                Some(Err(e)) => {
+                    let title = i18n::fmt(tl!("{name} could not be updated"), &[("name", name.as_str())]);
+                    notices::post(self, title, vec![e], true, None);
+                }
+                None => return,
+            }
+        }
     }
 
     /// Send each subscribed plug-in the change events for this frame's edits, by the user and by
@@ -436,6 +456,12 @@ mod pump_tests {
         fn install(&mut self, _: &str) -> Result<String, String> {
             Err("no".into())
         }
+        fn update(&mut self, plugin: &str, package: &str) -> Result<(), String> {
+            // Logged with what was sent, so a test sees it came after the answer.
+            let frame = Frame::new(Header::Event { topic: "test.updated".into(), data: json!({ "package": package }) });
+            self.sent.lock().unwrap().push((plugin.to_string(), frame));
+            Ok(())
+        }
         fn rescan(&mut self) {}
         fn shutdown(&mut self) {}
     }
@@ -557,6 +583,26 @@ mod pump_tests {
         for id in [1, 2, 4, 6] {
             assert!(refused(&sent, id).is_none(), "request {id} succeeded");
         }
+    }
+
+    #[test]
+    fn a_plugin_is_updated_once_its_answer_is_sent() {
+        let package = std::env::temp_dir().join("photocraft-plugin-update-test.zip");
+        std::fs::write(&package, b"PK").unwrap();
+        let path = package.to_string_lossy().into_owned();
+        let (mut app, sent, _) =
+            app_with(vec![request(1, "plugin.update", json!({ "path": path })), request(2, "plugin.update", json!({ "path": "relative/package.zip" }))]);
+        app.pump_process_plugins(&egui::Context::default());
+        let sent = sent.lock().unwrap();
+        let position = |find: &dyn Fn(&Header) -> bool| sent.iter().position(|(_, f)| find(&f.header)).unwrap();
+        let answered = position(&|h| matches!(h, Header::Response { id: 1, .. }));
+        let updated = position(&|h| matches!(h, Header::Event { topic, data } if topic == "test.updated" && data["package"] == path.as_str()));
+        assert!(answered < updated, "the update stops the plug-in: its answer goes first");
+        assert_eq!(refused(&sent, 2), Some(ErrorCode::NotFound), "only an absolute path to a file");
+        assert_eq!(sent.iter().filter(|(_, f)| matches!(&f.header, Header::Event { topic, .. } if topic == "test.updated")).count(), 1);
+        assert!(app.ui.notices.last().unwrap().title.starts_with("Updated"));
+        drop(sent);
+        let _ = std::fs::remove_file(&package);
     }
 
     #[test]

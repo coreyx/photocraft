@@ -73,6 +73,7 @@ impl PhotocraftApp {
             "notice.show" => self.plugin_notice(plugin, p),
             "open.url" => self.plugin_open_url(ctx, p),
             "open.path" => self.plugin_open_path(p),
+            "plugin.update" => self.plugin_update(plugin, p),
             "clipboard.get" => self.plugin_clipboard_get(),
             "clipboard.set" => self.plugin_clipboard_set(ctx, p),
             "progress.set" => self.plugin_progress_set(plugin, p),
@@ -118,6 +119,21 @@ impl PhotocraftApp {
         }
         let open = self.services.open_url.as_ref().ok_or_else(|| ErrorBody::new(ErrorCode::Unsupported, "this PhotoCraft can't open folders"))?;
         open(&p.path).map_err(|e| ErrorBody::new(ErrorCode::Internal, format!("can't open the path: {e}")))?;
+        Ok(empty())
+    }
+
+    /// `plugin.update`: install the plug-in's own newer package, after this answer (the update
+    /// stops and restarts the plug-in).
+    fn plugin_update(&mut self, plugin: &str, p: &Value) -> Result<Value, ErrorBody> {
+        let p: PathParams = params("plugin.update", p)?;
+        let path = std::path::Path::new(&p.path);
+        if !path.is_absolute() || !path.is_file() {
+            return Err(ErrorBody::new(ErrorCode::NotFound, "the package must be an absolute path to a file that exists"));
+        }
+        if self.services.process_plugins.is_none() {
+            return Err(ErrorBody::new(ErrorCode::Unsupported, "this PhotoCraft can't update plug-ins"));
+        }
+        self.process_plugin_ui.updates.push((plugin.to_string(), p.path));
         Ok(empty())
     }
 

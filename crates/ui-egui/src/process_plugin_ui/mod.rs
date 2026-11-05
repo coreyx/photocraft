@@ -132,6 +132,9 @@ pub struct PluginUi {
     pub dialogs: crate::process_plugin_dialogs::Dialogs,
     /// Registered actions by command id (`process_plugin_actions`).
     pub actions: std::collections::BTreeMap<String, crate::process_plugin_actions::Action>,
+    /// Packages plug-ins asked to be updated to (`plugin.update`), as (plug-in, path): applied
+    /// after their answers are sent, since updating stops the plug-in.
+    pub updates: Vec<(String, String)>,
 }
 
 impl PluginUi {

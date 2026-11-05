@@ -334,12 +334,19 @@ an action sends `action.triggered`.
 | `progress.clear` | `{taskId}` | `{}` |
 | `open.url` | `{url}` (`http`, `https` or `mailto` only) | `{}` |
 | `open.path` | `{path}` (absolute, existing) | `{}` |
+| `plugin.update` | `{path}` (absolute, an existing `.zip`) | `{}` |
 | `clipboard.get` | `{}` | `{text}` |
 | `clipboard.set` | `{text}` | `{}` |
 | `events.subscribe` | `{topics}` | `{}` |
 
 Progress shows in the status bar beside job progress, with a Cancel button when `cancellable`
 (which sends `progress.cancel`). It locks nothing: the user keeps working on every document.
+
+`plugin.update` installs a newer package of the plug-in that asks, as Preferences › Plug-ins
+installs one: after the answer is sent, PhotoCraft stops the plug-in, replaces its folder and
+starts it again, and tells the user. The package's manifest must have the asking plug-in's id;
+a package for any other plug-in is refused, so a plug-in can update itself and nothing else.
+Checking where the package came from (for example its checksum) is the plug-in's job.
 
 ## Errors
 

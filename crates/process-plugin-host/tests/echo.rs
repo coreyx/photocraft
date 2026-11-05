@@ -254,6 +254,27 @@ fn a_package_installs_starts_and_can_be_replaced() {
 }
 
 #[test]
+fn a_plugin_can_update_itself_and_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = empty_manager(dir.path());
+    let pkg = package(dir.path(), None, "conformance", &[]);
+    assert_eq!(manager.install(pkg.to_str().unwrap()).unwrap(), ID);
+    assert_eq!(wait_state(&mut manager, Duration::from_secs(5), |s| *s == PluginState::Running).0, PluginState::Running);
+
+    // Its own newer package: replaced and running again.
+    let newer = package(dir.path(), Some("echo-1.1.0"), "conformance", &[("echo-1.1.0/CHANGELOG.md", b"1.1.0")]);
+    manager.update(ID, newer.to_str().unwrap()).unwrap();
+    assert!(dir.path().join("plugins").join(ID).join("CHANGELOG.md").is_file());
+    assert_eq!(wait_state(&mut manager, Duration::from_secs(5), |s| *s == PluginState::Running).0, PluginState::Running);
+
+    // Another plug-in's id: refused, nothing installed.
+    let err = manager.update("org.example.other", newer.to_str().unwrap()).unwrap_err();
+    assert!(err.contains("not 'org.example.other'"), "{err}");
+    assert_eq!(manager.statuses().len(), 1);
+    manager.shutdown();
+}
+
+#[test]
 fn packages_cannot_escape_the_plugin_folder() {
     let dir = tempfile::tempdir().unwrap();
     let mut manager = empty_manager(dir.path());

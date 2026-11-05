@@ -777,6 +777,7 @@ methods! {
     ProgressClear = "progress.clear": TaskRef => Empty;
     OpenUrl = "open.url": UrlParams => Empty;
     OpenPath = "open.path": PathParams => Empty;
+    PluginUpdate = "plugin.update": PathParams => Empty;
     ClipboardGet = "clipboard.get": Empty => ClipboardText;
     ClipboardSet = "clipboard.set": ClipboardText => Empty;
     EventsSubscribe = "events.subscribe": SubscribeParams => Empty;

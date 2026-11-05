@@ -184,6 +184,24 @@ impl Manager {
     }
 
     /// Launch one plug-in (no-op if it already runs).
+    /// Put a staged package in place of any installed copy (stopped first), and start it if
+    /// enabled. Returns its id.
+    fn place_staged(&mut self, staged: install::Staged) -> Result<String, String> {
+        let plugins_dir = self.config.plugins_dir.clone();
+        let id = staged.manifest.id.clone();
+        // The installed copy's files may be in use: stop it before replacing them.
+        self.stop(&id);
+        self.slots.remove(&id);
+        staged.place(&plugins_dir)?;
+        drop(staged);
+        let manifest = staged_manifest(&plugins_dir, &id)?;
+        self.scan();
+        if !self.config.disabled.contains(&manifest.id) {
+            self.launch_one(&manifest.id)?;
+        }
+        Ok(manifest.id)
+    }
+
     fn launch_one(&mut self, key: &str) -> Result<(), String> {
         let enabled = !self.config.disabled.contains(key);
         let slot = self.slots.get_mut(key).ok_or_else(|| format!("no plug-in '{key}' is installed"))?;
@@ -300,20 +318,16 @@ impl ProcessPluginHost for Manager {
     }
 
     fn install(&mut self, package: &str) -> Result<String, String> {
-        let plugins_dir = self.config.plugins_dir.clone();
-        let staged = install::stage(Path::new(package), &plugins_dir)?;
-        let id = staged.manifest.id.clone();
-        // The installed copy's files may be in use: stop it before replacing them.
-        self.stop(&id);
-        self.slots.remove(&id);
-        staged.place(&plugins_dir)?;
-        drop(staged);
-        let manifest = staged_manifest(&plugins_dir, &id)?;
-        self.scan();
-        if !self.config.disabled.contains(&manifest.id) {
-            self.launch_one(&manifest.id)?;
+        let staged = install::stage(Path::new(package), &self.config.plugins_dir)?;
+        self.place_staged(staged)
+    }
+
+    fn update(&mut self, plugin: &str, package: &str) -> Result<(), String> {
+        let staged = install::stage(Path::new(package), &self.config.plugins_dir)?;
+        if staged.manifest.id != plugin {
+            return Err(format!("the package is the plug-in '{}', not '{plugin}'", staged.manifest.id));
         }
-        Ok(manifest.id)
+        self.place_staged(staged).map(|_| ())
     }
 
     fn rescan(&mut self) {
