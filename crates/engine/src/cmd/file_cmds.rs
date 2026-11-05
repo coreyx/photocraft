@@ -122,6 +122,7 @@ impl crate::DocState {
         }
         self.path = Some(path);
         self.saved_revision = self.revision;
+        self.saves = self.saves.wrapping_add(1);
     }
 }
 

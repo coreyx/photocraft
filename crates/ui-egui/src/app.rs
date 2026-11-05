@@ -287,6 +287,7 @@ impl eframe::App for PhotocraftApp {
             self.ui.status_error = true;
         }
         self.ui_frame(ui, frame);
+        self.publish_process_plugin_events();
         self.finish_type_reset_pass(ui.ctx());
     }
 }

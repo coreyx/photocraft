@@ -274,6 +274,7 @@ fn hostile_parameters_never_panic() {
         "selection.bounds",
         "selection.set",
         "mask.read",
+        "events.subscribe",
     ];
     let values = [
         Value::Null,
@@ -297,6 +298,8 @@ fn hostile_parameters_never_panic() {
         json!({"doc": "-1", "uid": "-"}),
         json!({"doc": doc, "uid": uid, "rect": {"x": i64::MIN, "y": -1, "width": u32::MAX, "height": 1}, "format": "rgba32f", "source": {"kind": "composite"}}),
         json!({"doc": doc, "uid": uid, "rect": {"x": 0, "y": 0, "width": 1, "height": 3}, "format": "gray8", "which": "alpha", "name": "n"}),
+        json!({"topics": ["pixels.changed", "nonsense"]}),
+        json!({"topics": ["panel.input", 7]}),
         json!({"doc": doc, "rect": {"x": 0, "y": 0, "width": 3, "height": 1}, "source": {"kind": "group", "uid": uid}, "exclude": ["x", uid], "format": "bgra8"}),
     ];
     for method in methods {

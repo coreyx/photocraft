@@ -278,7 +278,7 @@ pub(super) fn selection_read(s: &mut Session, p: &Value) -> Outcome {
 }
 
 /// Tight bounds of a selection on the canvas, `None` when it selects nothing there.
-fn selection_bounds(doc: &Document) -> Option<photocraft_geom::Rect> {
+pub(super) fn selection_bounds(doc: &Document) -> Option<photocraft_geom::Rect> {
     let selection = doc.selection.as_ref()?;
     // A selection whose untouched pixels are selected covers the whole canvas.
     let reach = if selection.default_pixel().first().is_some_and(|v| *v > 0.0) { doc.bounds() } else { selection.content_bounds() };

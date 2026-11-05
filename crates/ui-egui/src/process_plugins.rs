@@ -1,7 +1,8 @@
 //! The shell's side of process plug-ins (`Services::process_plugins`).
 //!
 //! Once per frame the shell starts the enabled plug-ins (the first time), then drains what they
-//! sent. Each request is answered by the session's broker (`Session::plugin_request`): a result,
+//! sent; at the end of the frame it sends subscribed plug-ins the change events for the frame's
+//! edits (`Session::plugin_events`). Each request is answered by the session's broker (`Session::plugin_request`): a result,
 //! or a typed error such as `unsupported` for a method the host doesn't serve, so a plug-in never
 //! waits on a request. Plug-ins are launched and
 //! supervised outside the UI thread (`photocraft-process-plugin-host` on the desktop); the web
@@ -54,6 +55,19 @@ impl PhotocraftApp {
                         log::debug!("plug-in '{plugin}': {e}");
                     }
                 }
+            }
+        }
+    }
+
+    /// Send each subscribed plug-in the change events for this frame's edits, by the user and by
+    /// plug-ins alike. Called once per frame, after the frame's UI pass made its edits, so a change
+    /// reaches plug-ins in the frame it happened in.
+    pub(crate) fn publish_process_plugin_events(&mut self) {
+        let Some(host) = self.services.process_plugins.as_mut() else { return };
+        for event in self.session.plugin_events() {
+            let sent = Header::event(event.topic, &event.data).map_err(|e| e.message).and_then(|header| host.send(&event.plugin, Frame::new(header)));
+            if let Err(e) = sent {
+                log::debug!("plug-in '{}': {e}", event.plugin);
             }
         }
     }
@@ -427,6 +441,26 @@ mod pump_tests {
         let sent = sent.lock().unwrap();
         assert!(matches!(&sent[0].1.header, Header::Response { id: 7, result } if result.is_array()));
         assert!(matches!(&sent[1].1.header, Header::Error { id: 8, error } if error.code == ErrorCode::Unsupported));
+    }
+
+    #[test]
+    fn subscribed_plugins_get_the_frames_change_events() {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let host = FakeHost {
+            inbox: vec![request(1, "events.subscribe", json!({"topics": ["selection.changed"]}))],
+            sent: sent.clone(),
+            started: Arc::new(Mutex::new(None)),
+        };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Services { process_plugins: Some(Box::new(host)), ..Default::default() });
+        let doc = photocraft_doc::Document::new("d", photocraft_geom::Size::new(4, 4), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
+        app.session.add_document(doc, None);
+        app.pump_process_plugins(&egui::Context::default());
+        app.session.execute("select.all", json!({})).unwrap();
+        app.publish_process_plugin_events();
+        let sent = sent.lock().unwrap();
+        assert!(matches!(&sent[0].1.header, Header::Response { id: 1, .. }));
+        assert!(matches!(&sent[1].1.header, Header::Event { topic, data } if topic == "selection.changed" && data["bounds"]["width"] == 4));
+        assert_eq!(sent.len(), 2);
     }
 
     #[test]

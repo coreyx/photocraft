@@ -4,7 +4,7 @@
 //! [`Session::plugin_request`], which answers with a JSON result and an optional binary payload,
 //! or a typed protocol error. This module owns the document side of the process plug-in protocol
 //! (`photocraft-process-plugin-protocol`): documents, the layer tree, pixels, selections and masks,
-//! and undo groups.
+//! undo groups, and the change events subscribed plug-ins receive.
 //!
 //! Every change a plug-in makes is an ordinary [`Session::edit`], so it is one undoable history
 //! step labelled by the plug-in, or part of one when it runs inside an undo group
@@ -16,6 +16,9 @@
 //! absurd size is an error the plug-in can act on, never a panic.
 
 mod docs;
+#[cfg(test)]
+mod event_tests;
+mod events;
 mod layers;
 #[cfg(test)]
 mod pixel_tests;
@@ -24,11 +27,13 @@ mod pixels;
 mod tests;
 mod undo;
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use photocraft_doc::{DocId, Document, LayerId};
 use photocraft_process_plugin_protocol::message::{ErrorBody, ErrorCode};
 use serde_json::Value;
+
+pub use events::PluginEvent;
 
 use crate::{EngineError, Session};
 
@@ -38,11 +43,18 @@ pub type Reply = (Value, Vec<u8>);
 /// A request's outcome.
 pub type Outcome = Result<Reply, ErrorBody>;
 
-/// Process plug-in state kept by the session: open undo groups.
+/// Process plug-in state kept by the session: open undo groups and event subscriptions.
 #[derive(Default)]
 pub struct Broker {
     groups: HashMap<u64, undo::Group>,
     next_group: u64,
+    /// Each subscribed plug-in's document topics.
+    subscriptions: HashMap<String, BTreeSet<&'static str>>,
+    /// The documents as the last [`Session::plugin_events`] saw them (while anyone subscribes).
+    watch: Option<events::Watch>,
+    /// Per document, the revision a plug-in's edit produced and the plug-in: the next change
+    /// event at that revision carries it as its origin.
+    origins: HashMap<DocId, (u64, String)>,
 }
 
 impl Session {
@@ -73,14 +85,19 @@ impl Session {
             "mask.read" => pixels::mask_read(self, params),
             "undo.begin" => undo::begin(self, plugin, params),
             "undo.end" => undo::end(self, plugin, params),
+            "events.subscribe" => events::subscribe(self, plugin, params),
             other => Err(ErrorBody::new(ErrorCode::Unsupported, format!("PhotoCraft does not support '{other}'"))),
         }
     }
 
     /// A plug-in disconnected (stopped, crashed or removed): close the undo groups it left open,
-    /// so the next edit records a step of its own.
+    /// so the next edit records a step of its own, and drop its event subscriptions.
     pub fn plugin_disconnected(&mut self, plugin: &str) {
         undo::close_all(self, plugin);
+        self.process_plugin.subscriptions.remove(plugin);
+        if self.process_plugin.subscriptions.is_empty() {
+            self.process_plugin.watch = None;
+        }
     }
 
     /// Index of the open document with `id`.
@@ -128,7 +145,12 @@ impl Session {
             });
             s.coalesce_request = previous;
             match result {
-                Ok(r) => Ok(r),
+                Ok(r) => {
+                    if let Some(revision) = s.active.and_then(|i| s.docs.get(i)).map(|st| st.revision) {
+                        s.process_plugin.origins.insert(doc_id, (revision, plugin.to_string()));
+                    }
+                    Ok(r)
+                }
                 Err(e) => Err(failure.unwrap_or_else(|| engine_error(e))),
             }
         })

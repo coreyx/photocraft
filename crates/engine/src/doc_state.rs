@@ -20,6 +20,9 @@ pub struct DocState {
     /// Increments on every change; UIs re-render when it moves.
     pub revision: u64,
     pub saved_revision: u64,
+    /// How many times the document was saved to its file ([`DocState::saved_to`]): what tells a
+    /// save apart from the many other changes that leave a document clean.
+    pub saves: u64,
     /// Native save cache shared with this document's workers, released with the editing state.
     pub pcraft_cache: photocraft_io::PcraftExportCache,
     /// How much of `revision` came from view-only changes (channel eyes, targeting): pixel caches can ignore those.
@@ -92,6 +95,7 @@ impl DocState {
             source_read_only: false,
             revision: 1,
             saved_revision: 1,
+            saves: 0,
             pcraft_cache: Default::default(),
             view_revision: 0,
             last_damage: None,
