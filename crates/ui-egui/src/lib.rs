@@ -73,6 +73,7 @@ pub use state::{Tool, UiState};
 mod app;
 mod input;
 mod prefs;
+mod process_plugin_services;
 mod process_plugins;
 mod services;
 #[cfg(not(target_arch = "wasm32"))]
@@ -254,10 +255,10 @@ pub(crate) use services::SAVE_OPTIONS_OPEN;
 pub(crate) use services::saved_revision_after_write;
 pub use services::{
     AdoptAutosaveFn, AppendTextFn, AutomationCommandFn, AutomationOpenPcraftFn, AutomationReadFn, AutomationWriteFn, AutosaveFn, AutosaveResultsFn, CapsLockFn,
-    CaptionStyleFn, ClipboardGetFn, ClipboardGetSvgFn, ClipboardSetFn, ClipboardUnreadableFn, CursorPosFn, DiscardAutosaveFn, EncodePngFn, ExportFn,
-    ExportSettings, ExternalSvgEditor, ExternalSvgSession, ExternalVectorSave, ExternalVectorSource, FileStamp, FileStampFn, FormatChoices, ImportFn, Inbox,
-    LoadTextFn, OpenExternalSvgFn, OpenUrlFn, OsEventsFn, PhotoshopShortcutsFn, QuitFn, RecoverFn, Recoverable, RightButtonDownFn, SameFileFn, SaveFileFn,
-    SaveTextFn, Services, SystemThemeFn, WindowFrameFn, WriteFn,
+    CaptionStyleFn, ClipboardGetFn, ClipboardGetSvgFn, ClipboardGetTextFn, ClipboardSetFn, ClipboardSetTextFn, ClipboardUnreadableFn, CursorPosFn,
+    DiscardAutosaveFn, EncodePngFn, ExportFn, ExportSettings, ExternalSvgEditor, ExternalSvgSession, ExternalVectorSave, ExternalVectorSource, FileStamp,
+    FileStampFn, FormatChoices, ImportFn, Inbox, LoadTextFn, OpenExternalSvgFn, OpenUrlFn, OsEventsFn, PhotoshopShortcutsFn, QuitFn, RecoverFn, Recoverable,
+    RightButtonDownFn, SameFileFn, SaveFileFn, SaveTextFn, Services, SystemThemeFn, WindowFrameFn, WriteFn,
 };
 pub use text::bidi_text;
 pub use text::cjk_fonts;
@@ -387,6 +388,10 @@ pub struct PhotocraftApp {
     pub(crate) remove_trail: Option<stroke_trail::Trail>,
     /// Whether `Services::process_plugins` has been started (on the first frame).
     pub(crate) process_plugins_started: bool,
+    /// Plug-ins' progress indicators in the status bar (`process_plugin_services`).
+    pub(crate) process_plugin_progress: Vec<process_plugin_services::PluginProgress>,
+    /// The UI language plug-ins were last told about (`locale.changed`).
+    pub(crate) process_plugin_locale: String,
     /// The open menus' items, reused between frames (`menus::ItemCache`).
     pub(crate) menu_cache: Option<menus::ItemCache>,
     /// Move tool drag shown live (`move_ui`).

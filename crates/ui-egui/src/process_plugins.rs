@@ -30,6 +30,7 @@ impl PhotocraftApp {
         if self.services.process_plugins.is_none() {
             return;
         }
+        self.tell_plugins_the_locale();
         if !self.process_plugins_started {
             self.process_plugins_started = true;
             let repaint = ctx.clone();
@@ -48,7 +49,7 @@ impl PhotocraftApp {
             match event {
                 HostEvent::State { plugin, state } => self.process_plugin_state_change(&plugin, &state),
                 HostEvent::Frame { plugin, frame } => {
-                    if let Some(reply) = self.serve_plugin_frame(&plugin, frame)
+                    if let Some(reply) = self.serve_plugin_frame(ctx, &plugin, frame)
                         && let Some(host) = self.services.process_plugins.as_mut()
                         && let Err(e) = host.send(&plugin, reply)
                     {
@@ -80,10 +81,11 @@ impl PhotocraftApp {
     }
 
     /// A plug-in changed state: when it is no longer running, whatever it left half-done (an
-    /// open undo group) ends with it.
+    /// open undo group, its progress indicators) ends with it.
     fn process_plugin_state_change(&mut self, plugin: &str, state: &PluginState) {
         if !state.is_live() && *state != PluginState::Starting {
             self.session.plugin_disconnected(plugin);
+            self.clear_plugin_progress(plugin);
         }
         self.process_plugin_state(plugin, state);
     }
@@ -108,7 +110,7 @@ impl PhotocraftApp {
         }
     }
 
-    fn process_plugin_name(&self, plugin: &str) -> String {
+    pub(crate) fn process_plugin_name(&self, plugin: &str) -> String {
         let statuses = self.services.process_plugins.as_ref().map(|h| h.statuses()).unwrap_or_default();
         statuses.into_iter().find(|s| s.id == plugin).map_or_else(|| plugin.to_string(), |s| s.name)
     }
@@ -184,10 +186,17 @@ fn set_disabled(list: &mut Vec<String>, id: &str, disabled: bool) {
 }
 
 impl PhotocraftApp {
-    /// Answer a plug-in's request: document requests go to the session's broker, which replies
-    /// with a result (and payload) or a typed error. Responses and events need no answer.
-    fn serve_plugin_frame(&mut self, plugin: &str, frame: Frame) -> Option<Frame> {
+    /// Answer a plug-in's request: the shell's own services (`process_plugin_services`), else
+    /// document requests through the session's broker, which replies with a result (and payload)
+    /// or a typed error. Responses and events need no answer.
+    fn serve_plugin_frame(&mut self, ctx: &egui::Context, plugin: &str, frame: Frame) -> Option<Frame> {
         let Header::Request { id, method, params } = frame.header else { return None };
+        if let Some(answer) = self.serve_plugin_service(ctx, plugin, &method, &params) {
+            return Some(match answer {
+                Ok(result) => Frame::new(Header::Response { id, result }),
+                Err(error) => Frame::new(Header::Error { id, error }),
+            });
+        }
         Some(match self.session.plugin_request(plugin, &method, &params, &frame.payload) {
             Ok((result, payload)) => Frame::with_payload(Header::Response { id, result }, payload),
             Err(error) => Frame::new(Header::Error { id, error }),
@@ -297,7 +306,7 @@ mod ui_tests {
     use photocraft_process_plugin_protocol::host::{PluginState, PluginStatus};
     use serde_json::{Map, Value, json};
 
-    fn status(id: &str, enabled: bool, state: PluginState) -> PluginStatus {
+    pub(super) fn status(id: &str, enabled: bool, state: PluginState) -> PluginStatus {
         PluginStatus {
             id: id.into(),
             name: id.into(),
@@ -385,6 +394,7 @@ mod pump_tests {
         inbox: Vec<HostEvent>,
         sent: Arc<Mutex<Vec<(String, Frame)>>>,
         started: Arc<Mutex<Option<Vec<String>>>>,
+        running: Vec<PluginStatus>,
     }
 
     impl ProcessPluginHost for FakeHost {
@@ -392,7 +402,7 @@ mod pump_tests {
             *self.started.lock().unwrap() = Some(settings.disabled);
         }
         fn statuses(&self) -> Vec<PluginStatus> {
-            Vec::new()
+            self.running.clone()
         }
         fn drain(&mut self) -> Vec<HostEvent> {
             std::mem::take(&mut self.inbox)
@@ -432,6 +442,7 @@ mod pump_tests {
             inbox: vec![request(7, "doc.list", serde_json::Value::Null), request(8, "layer.teleport", json!({}))],
             sent: sent.clone(),
             started: started.clone(),
+            running: Vec::new(),
         };
         let services = Services { process_plugins: Some(Box::new(host)), ..Default::default() };
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
@@ -450,6 +461,7 @@ mod pump_tests {
             inbox: vec![request(1, "events.subscribe", json!({"topics": ["selection.changed"]}))],
             sent: sent.clone(),
             started: Arc::new(Mutex::new(None)),
+            running: Vec::new(),
         };
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Services { process_plugins: Some(Box::new(host)), ..Default::default() });
         let doc = photocraft_doc::Document::new("d", photocraft_geom::Size::new(4, 4), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
@@ -463,10 +475,132 @@ mod pump_tests {
         assert_eq!(sent.len(), 2);
     }
 
+    /// The frames the shell sent to plug-ins, with the plug-in each went to.
+    type Sent = Arc<Mutex<Vec<(String, Frame)>>>;
+
+    /// What the services stubs saw: opened URLs and paths, and the clipboard's text.
+    #[derive(Default)]
+    struct Platform {
+        opened: Vec<String>,
+        clipboard: String,
+    }
+
+    /// An app with one document, whose plug-ins send `inbox`, and whose platform services
+    /// record into the returned `Platform`.
+    fn app_with(inbox: Vec<HostEvent>) -> (PhotocraftApp, Sent, Arc<Mutex<Platform>>) {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let platform = Arc::new(Mutex::new(Platform::default()));
+        let running = vec![super::ui_tests::status("org.example.p", true, PluginState::Running)];
+        let host = FakeHost { inbox, sent: sent.clone(), started: Arc::new(Mutex::new(None)), running };
+        let (a, b, c) = (platform.clone(), platform.clone(), platform.clone());
+        let services = Services {
+            process_plugins: Some(Box::new(host)),
+            open_url: Some(Box::new(move |url: &str| {
+                a.lock().unwrap().opened.push(url.to_string());
+                Ok(())
+            })),
+            clipboard_get_text: Some(Box::new(move || Ok(Some(b.lock().unwrap().clipboard.clone())))),
+            clipboard_set_text: Some(Box::new(move |text: &str| {
+                c.lock().unwrap().clipboard = text.to_string();
+                Ok(())
+            })),
+            ..Default::default()
+        };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        app.run("file.new", json!({"width": 32, "height": 32})).unwrap();
+        (app, sent, platform)
+    }
+
+    fn answer(sent: &[(String, Frame)], id: u64) -> &Header {
+        &sent.iter().find(|(_, f)| matches!(&f.header, Header::Response { id: i, .. } | Header::Error { id: i, .. } if *i == id)).unwrap().1.header
+    }
+
+    fn refused(sent: &[(String, Frame)], id: u64) -> Option<ErrorCode> {
+        match answer(sent, id) {
+            Header::Error { error, .. } => Some(error.code),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn services_answer_plugins_like_built_in_features() {
+        let folder = std::env::temp_dir().to_string_lossy().into_owned();
+        let (mut app, sent, platform) = app_with(vec![
+            request(1, "notice.show", json!({"level": "error", "text": "The server is unreachable."})),
+            request(2, "open.url", json!({"url": "https://example.com/docs"})),
+            request(3, "open.url", json!({"url": "javascript:alert(1)"})),
+            request(4, "open.path", json!({"path": folder})),
+            request(5, "open.path", json!({"path": "relative/folder"})),
+            request(6, "clipboard.set", json!({"text": "a fox, golden hour"})),
+            request(7, "clipboard.get", json!({})),
+            request(8, "notice.show", json!({"level": "info", "text": "   "})),
+        ]);
+        app.pump_process_plugins(&egui::Context::default());
+        let sent = sent.lock().unwrap();
+        let notice = app.ui.notices.last().unwrap();
+        assert!(notice.error && notice.lines == ["The server is unreachable."]);
+        assert_eq!(refused(&sent, 3), Some(ErrorCode::Invalid), "only web and mail links");
+        assert_eq!(refused(&sent, 5), Some(ErrorCode::NotFound), "only absolute paths that exist");
+        assert_eq!(refused(&sent, 8), Some(ErrorCode::Invalid), "a notice needs text");
+        assert_eq!(platform.lock().unwrap().opened, ["https://example.com/docs".to_string(), folder]);
+        assert!(matches!(answer(&sent, 7), Header::Response { result, .. } if result["text"] == "a fox, golden hour"));
+        for id in [1, 2, 4, 6] {
+            assert!(refused(&sent, id).is_none(), "request {id} succeeded");
+        }
+    }
+
+    #[test]
+    fn progress_shows_cancels_and_never_blocks_painting() {
+        let set = json!({"taskId": "gen-1", "fraction": 0.25, "message": "Generating", "cancellable": true});
+        let (mut app, sent, _) = app_with(vec![request(1, "progress.set", set)]);
+        app.pump_process_plugins(&egui::Context::default());
+        assert_eq!(app.process_plugin_progress.len(), 1);
+        assert_eq!(app.process_plugin_progress[0].fraction, Some(0.25));
+        // The user keeps painting on the document meanwhile: no job holds it.
+        assert!(!app.session.has_jobs());
+        let steps = app.session.active().unwrap().history.entries().len();
+        app.run("edit.fill", json!({"color": "#336699"})).unwrap();
+        assert_eq!(app.session.active().unwrap().history.entries().len(), steps + 1);
+        // Cancel asks the plug-in to stop and hides the button until it clears the task.
+        app.cancel_plugin_task("org.example.p", "gen-1");
+        assert!(!app.process_plugin_progress[0].cancellable);
+        let cancel = sent.lock().unwrap().iter().any(|(p, f)| {
+            p == "org.example.p" && matches!(&f.header, Header::Event { topic, data } if topic == "progress.cancel" && data["taskId"] == "gen-1")
+        });
+        assert!(cancel, "progress.cancel sent");
+        app.process_plugin_state_change_for_tests("org.example.p", PluginState::Crashed { reason: "x".into() });
+        assert!(app.process_plugin_progress.is_empty(), "a stopped plug-in's progress goes");
+    }
+
+    #[test]
+    fn progress_is_cleared_by_the_plugin() {
+        let (mut app, _, _) = app_with(vec![
+            request(1, "progress.set", json!({"taskId": "a", "message": "Downloading"})),
+            request(2, "progress.set", json!({"taskId": "b", "fraction": 7.0, "message": "Uploading"})),
+            request(3, "progress.clear", json!({"taskId": "a"})),
+        ]);
+        app.pump_process_plugins(&egui::Context::default());
+        assert_eq!(app.process_plugin_progress.len(), 1);
+        assert_eq!(app.process_plugin_progress[0].fraction, Some(1.0), "clamped");
+    }
+
+    #[test]
+    fn running_plugins_hear_about_a_language_change() {
+        let (mut app, sent, _) = app_with(Vec::new());
+        crate::i18n::set_current(crate::i18n::Lang::from_pref("en"));
+        app.pump_process_plugins(&egui::Context::default());
+        assert!(sent.lock().unwrap().is_empty(), "the welcome told them the first language");
+        crate::i18n::set_current(crate::i18n::Lang::from_pref("de"));
+        app.pump_process_plugins(&egui::Context::default());
+        crate::i18n::set_current(crate::i18n::Lang::from_pref("en"));
+        let sent = sent.lock().unwrap();
+        assert!(matches!(&sent[0].1.header, Header::Event { topic, data } if topic == "locale.changed" && data["locale"] == "de"));
+    }
+
     #[test]
     fn a_stopped_plugin_leaves_no_undo_group_open() {
         let sent = Arc::new(Mutex::new(Vec::new()));
-        let host = FakeHost { inbox: Vec::new(), sent, started: Arc::new(Mutex::new(None)) };
+        let host = FakeHost { inbox: Vec::new(), sent, started: Arc::new(Mutex::new(None)), running: Vec::new() };
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Services { process_plugins: Some(Box::new(host)), ..Default::default() });
         let doc = photocraft_doc::Document::new("d", photocraft_geom::Size::new(4, 4), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
         app.session.add_document(doc, None);

@@ -740,6 +740,28 @@ pub fn native(automation: Option<photocraft_automation::AuthorizedWorkspace>) ->
             })
         }),
         open_external_svg: Some(Box::new(crate::external_svg::open)),
+        clipboard_get_text: Some({
+            let clip = clip.clone();
+            Box::new(move || {
+                let mut slot = clip.try_borrow_mut().map_err(|_| "clipboard is busy".to_string())?;
+                let cb = match slot.as_mut() {
+                    Some(c) => c,
+                    None => slot.insert(arboard::Clipboard::new().map_err(|e| e.to_string())?),
+                };
+                crate::crash_guard::guard("Paste", || clipboard_text(cb.get_text()))
+            })
+        }),
+        clipboard_set_text: Some({
+            let clip = clip.clone();
+            Box::new(move |text: &str| {
+                let mut slot = clip.try_borrow_mut().map_err(|_| "clipboard is busy".to_string())?;
+                let cb = match slot.as_mut() {
+                    Some(c) => c,
+                    None => slot.insert(arboard::Clipboard::new().map_err(|e| e.to_string())?),
+                };
+                crate::crash_guard::guard("Copy", || cb.set_text(text).map_err(|e| e.to_string()))
+            })
+        }),
         clipboard_get_image: Some({
             let clip = clip.clone();
             let unreadable = clip_unreadable.clone();

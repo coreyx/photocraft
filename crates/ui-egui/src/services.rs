@@ -278,6 +278,10 @@ pub type ClipboardGetFn = Box<dyn FnMut() -> Result<Option<(u32, u32, Vec<u8>)>,
 
 /// Read original SVG markup for an explicit Paste As. A read error preserves the internal copy.
 pub type ClipboardGetSvgFn = Box<dyn FnMut() -> Result<Option<Vec<u8>>, String>>;
+/// Reads the OS clipboard's text (`None` when it holds none).
+pub type ClipboardGetTextFn = Box<dyn FnMut() -> Result<Option<String>, String>>;
+/// Puts text on the OS clipboard.
+pub type ClipboardSetTextFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 
 /// Whether the last clipboard read found no way to reach the OS clipboard at all.
 pub type ClipboardUnreadableFn = Box<dyn Fn() -> bool>;
@@ -471,6 +475,10 @@ pub struct Services {
     /// SVG text copied by another app: imported only by an explicit pixels/path/shape paste,
     /// and read after an ordinary paste too, only to remember which SVG came with that image.
     pub clipboard_get_svg: Option<ClipboardGetSvgFn>,
+    /// OS clipboard text, for process plug-ins' `clipboard.get`/`clipboard.set` (native). Without
+    /// them, plug-ins can set text through egui and can't read it.
+    pub clipboard_get_text: Option<ClipboardGetTextFn>,
+    pub clipboard_set_text: Option<ClipboardSetTextFn>,
     /// True when the last `clipboard_get_image` read had no clipboard to read, as in a Flatpak on
     /// Wayland (#5031), rather than a clipboard that holds no image. `None` where that can't happen.
     pub clipboard_unreadable: Option<ClipboardUnreadableFn>,

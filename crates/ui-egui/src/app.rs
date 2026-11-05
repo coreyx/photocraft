@@ -59,6 +59,8 @@ impl PhotocraftApp {
             remove_pending_target: None,
             remove_trail: None,
             process_plugins_started: false,
+            process_plugin_progress: Vec::new(),
+            process_plugin_locale: String::new(),
             menu_cache: None,
             move_preview: None,
             move_hover: None,
