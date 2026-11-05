@@ -1,8 +1,9 @@
 //! The shell's side of process plug-ins (`Services::process_plugins`).
 //!
 //! Once per frame the shell starts the enabled plug-ins (the first time), then drains what they
-//! sent. Requests that nothing in the shell serves yet are answered with an `unsupported` error,
-//! so a plug-in never waits on a request the host can't handle. Plug-ins are launched and
+//! sent. Each request is answered by the session's broker (`Session::plugin_request`): a result,
+//! or a typed error such as `unsupported` for a method the host doesn't serve, so a plug-in never
+//! waits on a request. Plug-ins are launched and
 //! supervised outside the UI thread (`photocraft-process-plugin-host` on the desktop); the web
 //! build has no process plug-ins and leaves the service unset.
 //!
@@ -15,7 +16,7 @@ use std::sync::Arc;
 use egui::RichText;
 use photocraft_process_plugin_protocol::frame::Frame;
 use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, PluginStatus, StartSettings};
-use photocraft_process_plugin_protocol::message::{ErrorCode, Header};
+use photocraft_process_plugin_protocol::message::Header;
 use serde_json::{Map, Value, json};
 
 use crate::file_dialog::{FileDialogAnswer, FileDialogRequest};
@@ -44,9 +45,9 @@ impl PhotocraftApp {
         let events = self.services.process_plugins.as_mut().map(|host| host.drain()).unwrap_or_default();
         for event in events {
             match event {
-                HostEvent::State { plugin, state } => self.process_plugin_state(&plugin, &state),
+                HostEvent::State { plugin, state } => self.process_plugin_state_change(&plugin, &state),
                 HostEvent::Frame { plugin, frame } => {
-                    if let Some(reply) = unserved_reply(&frame.header)
+                    if let Some(reply) = self.serve_plugin_frame(&plugin, frame)
                         && let Some(host) = self.services.process_plugins.as_mut()
                         && let Err(e) = host.send(&plugin, reply)
                     {
@@ -62,6 +63,20 @@ impl PhotocraftApp {
         if let Some(host) = self.services.process_plugins.as_mut() {
             host.shutdown();
         }
+    }
+
+    /// A plug-in changed state: when it is no longer running, whatever it left half-done (an
+    /// open undo group) ends with it.
+    fn process_plugin_state_change(&mut self, plugin: &str, state: &PluginState) {
+        if !state.is_live() && *state != PluginState::Starting {
+            self.session.plugin_disconnected(plugin);
+        }
+        self.process_plugin_state(plugin, state);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn process_plugin_state_change_for_tests(&mut self, plugin: &str, state: PluginState) {
+        self.process_plugin_state_change(plugin, &state);
     }
 
     /// Log a plug-in's state change, and tell the user when one stops unexpectedly.
@@ -154,12 +169,15 @@ fn set_disabled(list: &mut Vec<String>, id: &str, disabled: bool) {
     }
 }
 
-/// The answer to a plug-in request nothing in the shell serves: `unsupported`. Responses and
-/// events need no answer.
-fn unserved_reply(header: &Header) -> Option<Frame> {
-    match header {
-        Header::Request { id, method, .. } => Some(Frame::new(Header::error(*id, ErrorCode::Unsupported, format!("PhotoCraft does not support '{method}'")))),
-        _ => None,
+impl PhotocraftApp {
+    /// Answer a plug-in's request: document requests go to the session's broker, which replies
+    /// with a result (and payload) or a typed error. Responses and events need no answer.
+    fn serve_plugin_frame(&mut self, plugin: &str, frame: Frame) -> Option<Frame> {
+        let Header::Request { id, method, params } = frame.header else { return None };
+        Some(match self.session.plugin_request(plugin, &method, &params, &frame.payload) {
+            Ok((result, payload)) => Frame::with_payload(Header::Response { id, result }, payload),
+            Err(error) => Frame::new(Header::Error { id, error }),
+        })
     }
 }
 
@@ -239,15 +257,6 @@ pub(crate) fn prefs_rows(ui: &mut egui::Ui, form: &mut Map<String, Value>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn unserved_requests_get_unsupported_and_others_no_reply() {
-        let request = Header::Request { id: 4, method: "layer.tree".into(), params: serde_json::Value::Null };
-        let reply = unserved_reply(&request).unwrap();
-        assert!(matches!(reply.header, Header::Error { id: 4, error } if error.code == ErrorCode::Unsupported && error.message.contains("layer.tree")));
-        assert!(unserved_reply(&Header::Event { topic: "x".into(), data: serde_json::Value::Null }).is_none());
-        assert!(unserved_reply(&Header::Response { id: 1, result: serde_json::Value::Null }).is_none());
-    }
 
     #[test]
     fn disabled_lists_stay_sorted_and_unique() {
@@ -343,5 +352,97 @@ mod ui_tests {
     fn without_the_service_the_page_says_so() {
         let h = harness(200.0, Map::new());
         h.get_by_label("Process plug-ins aren't available in this version of PhotoCraft.");
+    }
+}
+
+#[cfg(test)]
+mod pump_tests {
+    use std::sync::{Arc, Mutex};
+
+    use photocraft_process_plugin_protocol::frame::Frame;
+    use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, PluginStatus, ProcessPluginHost, StartSettings};
+    use photocraft_process_plugin_protocol::message::{ErrorCode, Header};
+    use serde_json::json;
+
+    use crate::{PhotocraftApp, Services};
+
+    /// A host that delivers queued events and records what the shell sends back.
+    struct FakeHost {
+        inbox: Vec<HostEvent>,
+        sent: Arc<Mutex<Vec<(String, Frame)>>>,
+        started: Arc<Mutex<Option<Vec<String>>>>,
+    }
+
+    impl ProcessPluginHost for FakeHost {
+        fn start(&mut self, settings: StartSettings) {
+            *self.started.lock().unwrap() = Some(settings.disabled);
+        }
+        fn statuses(&self) -> Vec<PluginStatus> {
+            Vec::new()
+        }
+        fn drain(&mut self) -> Vec<HostEvent> {
+            std::mem::take(&mut self.inbox)
+        }
+        fn send(&mut self, plugin: &str, frame: Frame) -> Result<(), String> {
+            self.sent.lock().unwrap().push((plugin.to_string(), frame));
+            Ok(())
+        }
+        fn next_request_id(&mut self) -> u64 {
+            1
+        }
+        fn restart(&mut self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn set_enabled(&mut self, _: &str, _: bool) -> Result<(), String> {
+            Ok(())
+        }
+        fn remove(&mut self, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn install(&mut self, _: &str) -> Result<String, String> {
+            Err("no".into())
+        }
+        fn rescan(&mut self) {}
+        fn shutdown(&mut self) {}
+    }
+
+    fn request(id: u64, method: &str, params: serde_json::Value) -> HostEvent {
+        HostEvent::Frame { plugin: "org.example.p".into(), frame: Frame::new(Header::Request { id, method: method.into(), params }) }
+    }
+
+    #[test]
+    fn requests_are_answered_by_the_session_and_plugins_start_with_the_disabled_list() {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let started = Arc::new(Mutex::new(None));
+        let host = FakeHost {
+            inbox: vec![request(7, "doc.list", serde_json::Value::Null), request(8, "layer.teleport", json!({}))],
+            sent: sent.clone(),
+            started: started.clone(),
+        };
+        let services = Services { process_plugins: Some(Box::new(host)), ..Default::default() };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+        app.session.edit_prefs(|p| p.plug_ins.disabled_process_plugins = vec!["org.example.off".into()]);
+        app.pump_process_plugins(&egui::Context::default());
+        assert_eq!(started.lock().unwrap().clone(), Some(vec!["org.example.off".to_string()]));
+        let sent = sent.lock().unwrap();
+        assert!(matches!(&sent[0].1.header, Header::Response { id: 7, result } if result.is_array()));
+        assert!(matches!(&sent[1].1.header, Header::Error { id: 8, error } if error.code == ErrorCode::Unsupported));
+    }
+
+    #[test]
+    fn a_stopped_plugin_leaves_no_undo_group_open() {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let host = FakeHost { inbox: Vec::new(), sent, started: Arc::new(Mutex::new(None)) };
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Services { process_plugins: Some(Box::new(host)), ..Default::default() });
+        let doc = photocraft_doc::Document::new("d", photocraft_geom::Size::new(4, 4), photocraft_color::ColorMode::Rgb, photocraft_color::SampleType::U8);
+        app.session.add_document(doc, None);
+        let id = app.session.documents()[0].doc.id.0.to_string();
+        let plugin = "org.example.p";
+        app.session.plugin_request(plugin, "undo.begin", &json!({"doc": id, "label": "Group"}), &[]).unwrap();
+        app.session.plugin_request(plugin, "layer.create", &json!({"doc": id, "kind": "pixel", "name": "A"}), &[]).unwrap();
+        // The plug-in crashes; its next edit after a restart is a step of its own.
+        app.process_plugin_state_change_for_tests(plugin, PluginState::Crashed { reason: "x".into() });
+        app.session.plugin_request(plugin, "layer.create", &json!({"doc": id, "kind": "pixel", "name": "B"}), &[]).unwrap();
+        assert_eq!(app.session.documents()[0].history.undo_label(), Some("New Layer"));
     }
 }

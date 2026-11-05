@@ -5207,6 +5207,7 @@ dependencies = [
  "photocraft-ops",
  "photocraft-paint",
  "photocraft-plugins",
+ "photocraft-process-plugin-protocol",
  "photocraft-psd",
  "photocraft-raster",
  "photocraft-raw",

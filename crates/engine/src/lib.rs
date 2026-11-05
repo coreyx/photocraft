@@ -37,6 +37,7 @@ mod pixels;
 pub mod prefs;
 pub mod preset_store;
 pub mod presets;
+pub mod process_plugin;
 pub mod proof_sim;
 mod scratch;
 pub mod select_mask_edits;
@@ -205,6 +206,8 @@ pub struct Session {
     typed_layer: Option<(photocraft_doc::DocId, LayerId)>,
     /// Coalescing key of the command being executed.
     coalesce_request: Option<String>,
+    /// Process plug-in requests' state (open undo groups).
+    process_plugin: process_plugin::Broker,
     /// The outer action's original document/history states, independent of command transactions.
     action_history: Option<actions_cmds::ActionHistory>,
     /// Weak leases expire when every copy of a suspended continuation is abandoned.
