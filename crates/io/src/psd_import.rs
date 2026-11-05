@@ -490,6 +490,15 @@ impl Ctx<'_> {
                 }
                 None => Some(xmp.to_string()),
             };
+            // Process plug-ins' values on the layer come out the same way.
+            let xmp = match xmp {
+                Some(xmp) => {
+                    let (data, rest) = photocraft_doc::plugin_data::take_layer_xmp(&xmp);
+                    l.plugin_data = data;
+                    rest
+                }
+                None => None,
+            };
             l.xmp = xmp.map(|x| Arc::from(x.as_str()));
             match rest {
                 Some(data) => l.psd_blocks[i].1 = Arc::new(data),
@@ -1180,6 +1189,11 @@ fn read_initial_metadata(
                 doc.clipping_path = Some(photocraft_doc::ClippingPath { name, flatness: 0.0 });
                 doc.metadata.psd_resources.push((resource.id, String::from_utf8_lossy(&resource.name).into_owned(), Arc::new(resource.data.clone())));
             }
+            // Process plug-ins' blobs; a container that can't be read is kept as it is.
+            photocraft_doc::plugin_data::PSD_RESOURCE if doc.plugin_data.is_empty() => match photocraft_doc::plugin_data::decode(&resource.data) {
+                Some(data) => doc.plugin_data = data,
+                None => doc.metadata.psd_resources.push((resource.id, String::from_utf8_lossy(&resource.name).into_owned(), Arc::new(resource.data.clone()))),
+            },
             crate::channel_map::ALPHA_IDENTIFIERS if !multichannel => {}
             id if MAPPED_RESOURCES.contains(&id) => {}
             id => doc.metadata.psd_resources.push((id, String::from_utf8_lossy(&resource.name).into_owned(), Arc::new(resource.data.clone()))),

@@ -91,6 +91,17 @@ pub struct DocM {
     /// Web slices (user and layer-based; layer ids are remapped on load).
     #[serde(default, skip_serializing_if = "photocraft_doc::Slices::is_empty")]
     pub slices: photocraft_doc::Slices,
+    /// Process plug-ins' blobs ([`photocraft_doc::Document::plugin_data`]; missing in older files
+    /// = none).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugin_data: Vec<PluginBlobM>,
+}
+
+/// One process plug-in blob: its `<plugin-id>/<name>` key and its bytes, stored as a blob.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PluginBlobM {
+    pub key: String,
+    pub data: Hash,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -231,6 +242,10 @@ pub struct LayerM {
     /// on load).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uid: Option<String>,
+    /// Process plug-ins' values on the layer ([`photocraft_doc::Layer::plugin_data`]; missing in
+    /// older files = none).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub plugin_data: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

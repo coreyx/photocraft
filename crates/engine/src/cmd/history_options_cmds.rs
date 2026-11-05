@@ -95,10 +95,8 @@ pub(crate) fn delete_state(s: &mut Session, i: usize, current: usize) -> Result<
     // The step that made the current state: the layers whose visibility it changed get it back.
     let changed = st.history.current_visibility().to_vec();
     let (mut d, layers) = st.history.drop_current().ok_or_else(|| EngineError::Other("the history can't step back right now".into()))?;
-    // As Undo does: Save As changes file identity outside history.
-    if d.name != st.doc.name {
-        std::sync::Arc::make_mut(&mut d).name.clone_from(&st.doc.name);
-    }
+    // As Undo does: the name and process plug-ins' data are outside history.
+    crate::carry_outside_history(&st.doc, &mut d);
     if keep_visibility {
         crate::carry_visibility(&st.doc, &mut d, &changed);
     }

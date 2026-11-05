@@ -86,6 +86,17 @@ pub(crate) fn path_resources(doc: &Document, warnings: &mut Vec<String>) -> Vec<
     out
 }
 
+/// The resource holding process plug-ins' blobs ([`photocraft_doc::Document::plugin_data`]),
+/// when the document has any.
+pub(crate) fn plugin_data_resource(doc: &Document) -> Option<ImageResource> {
+    if doc.plugin_data.is_empty() {
+        return None;
+    }
+    let mut r = ImageResource::new(photocraft_doc::plugin_data::PSD_RESOURCE, photocraft_doc::plugin_data::encode(&doc.plugin_data));
+    r.name = legacy_name(photocraft_doc::plugin_data::PSD_RESOURCE_NAME);
+    Some(r)
+}
+
 /// Whether an imported (unmodelled) resource still describes the document and is written back.
 pub(crate) fn keep_imported_resource(doc: &Document, id: u16, data: &[u8]) -> bool {
     // Measurement scale / count resources: only while they still describe the document.
@@ -94,6 +105,10 @@ pub(crate) fn keep_imported_resource(doc: &Document, id: u16, data: &[u8]) -> bo
     }
     // Guides v2 and guide GUIDs: only while they still describe the document's guides.
     if !crate::guides_map::keep_resource(doc, id, data) {
+        return false;
+    }
+    // An unreadable plug-in data resource kept from the file gives way to the document's own.
+    if id == photocraft_doc::plugin_data::PSD_RESOURCE && !doc.plugin_data.is_empty() {
         return false;
     }
     // A preserved clipping-path resource is only valid while it names the current one.

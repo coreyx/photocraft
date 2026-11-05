@@ -4,7 +4,8 @@
 //! [`Session::plugin_request`], which answers with a JSON result and an optional binary payload,
 //! or a typed protocol error. This module owns the document side of the process plug-in protocol
 //! (`photocraft-process-plugin-protocol`): documents, the layer tree, pixels, selections and masks,
-//! undo groups, and the change events subscribed plug-ins receive.
+//! undo groups, the change events subscribed plug-ins receive, and the data plug-ins store in
+//! documents.
 //!
 //! Every change a plug-in makes is an ordinary [`Session::edit`], so it is one undoable history
 //! step labelled by the plug-in, or part of one when it runs inside an undo group
@@ -23,6 +24,9 @@ mod layers;
 #[cfg(test)]
 mod pixel_tests;
 mod pixels;
+mod storage;
+#[cfg(test)]
+mod storage_tests;
 #[cfg(test)]
 mod tests;
 mod undo;
@@ -86,6 +90,12 @@ impl Session {
             "undo.begin" => undo::begin(self, plugin, params),
             "undo.end" => undo::end(self, plugin, params),
             "events.subscribe" => events::subscribe(self, plugin, params),
+            "blob.get" => storage::blob_get(self, plugin, params),
+            "blob.set" => storage::blob_set(self, plugin, params, payload),
+            "blob.delete" => storage::blob_delete(self, plugin, params),
+            "blob.list" => storage::blob_list(self, plugin, params),
+            "layerData.get" => storage::layer_data_get(self, plugin, params),
+            "layerData.set" => storage::layer_data_set(self, plugin, params),
             other => Err(ErrorBody::new(ErrorCode::Unsupported, format!("PhotoCraft does not support '{other}'"))),
         }
     }

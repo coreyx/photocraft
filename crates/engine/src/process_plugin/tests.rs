@@ -275,6 +275,12 @@ fn hostile_parameters_never_panic() {
         "selection.set",
         "mask.read",
         "events.subscribe",
+        "blob.get",
+        "blob.set",
+        "blob.delete",
+        "blob.list",
+        "layerData.get",
+        "layerData.set",
     ];
     let values = [
         Value::Null,
@@ -299,6 +305,8 @@ fn hostile_parameters_never_panic() {
         json!({"doc": doc, "uid": uid, "rect": {"x": i64::MIN, "y": -1, "width": u32::MAX, "height": 1}, "format": "rgba32f", "source": {"kind": "composite"}}),
         json!({"doc": doc, "uid": uid, "rect": {"x": 0, "y": 0, "width": 1, "height": 3}, "format": "gray8", "which": "alpha", "name": "n"}),
         json!({"topics": ["pixels.changed", "nonsense"]}),
+        json!({"doc": doc, "name": "x".repeat(300), "uid": uid, "key": "\x07", "value": "v"}),
+        json!({"doc": doc, "name": "ok", "uid": uid, "key": "k", "value": "y".repeat(2 << 20)}),
         json!({"topics": ["panel.input", 7]}),
         json!({"doc": doc, "rect": {"x": 0, "y": 0, "width": 3, "height": 1}, "source": {"kind": "group", "uid": uid}, "exclude": ["x", uid], "format": "bgra8"}),
     ];

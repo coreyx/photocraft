@@ -1,7 +1,9 @@
 use super::PSD_MAX_FILE_SIZE;
 use super::estimate::{MERGED_RENDERED, MERGED_WEIGHT, fit_psd_size, psd_version, sign_global_blocks};
 use super::merged::{cmyk_of, merged_planes, placeholder_planes};
-use super::resources::{global_block, guides_resource, keep_imported_resource, legacy_name, pascal_names_resource, path_resources, unicode_names_resource};
+use super::resources::{
+    global_block, guides_resource, keep_imported_resource, legacy_name, pascal_names_resource, path_resources, plugin_data_resource, unicode_names_resource,
+};
 use super::smart::{SmartOut, link_group_resource};
 use super::{
     ColorMode, Compression, Document, Ex, GlobalLayerMask, Header, ImageData, ImageResource, Interrupt, LayerContent, LayerInfo, LayerInfoPlacement,
@@ -93,7 +95,8 @@ fn export_supported_document(
             let raw = doc.size.area().saturating_mul(fmt.bytes_per_pixel() as u64).saturating_mul(doc.walk().len() as u64 + 1);
             super::stage::Stage::for_document(raw, opts.stage_on_scratch_from)
         },
-        layer_uids: opts.layer_uids,
+        // A document with plug-in data always names its layers, so the plug-in finds them again.
+        layer_uids: opts.layer_uids || photocraft_doc::plugin_data::any(doc),
     };
     add_format_warnings(doc, opts, fmt, big, duotone_inks.is_some(), &mut ex.warnings);
     index_layer_ids_and_text(doc, &mut ex);
@@ -145,6 +148,7 @@ fn export_supported_document(
         resources.push(ImageResource::new(crate::channel_map::QUICK_MASK_INFO, data));
     }
     resources.extend(path_resources(doc, &mut ex.warnings));
+    resources.extend(plugin_data_resource(doc));
     if let Some(groups) = link_group_resource(&doc.layers) {
         resources.push(ImageResource::new(ids::LAYER_GROUP_INFO, groups));
     }

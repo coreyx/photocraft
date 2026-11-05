@@ -16,6 +16,7 @@ pub mod comps;
 pub mod effects;
 pub mod mode;
 pub mod pattern;
+pub mod plugin_data;
 pub mod plugin_xmp;
 pub mod slices;
 pub mod text;
@@ -717,6 +718,10 @@ pub struct Layer {
     /// and survives save and reload. Process plug-ins name layers by it. A copied layer gets a
     /// new one (see [`Layer::duplicate`]); a layer from a file without one gets one on load.
     pub uid: u128,
+    /// Small text values process plug-ins keep on the layer, keyed `<plugin-id>/<key>`. Saved with
+    /// the document (in `.pcraft`, and as XMP in PSD and PSB) and copied with the layer by
+    /// [`Layer::duplicate`]. Like [`Document::plugin_data`], it is not part of the undo history.
+    pub plugin_data: std::collections::BTreeMap<String, String>,
 }
 
 impl Layer {
@@ -752,6 +757,7 @@ impl Layer {
             video: None,
             xmp: None,
             uid: new_uid(),
+            plugin_data: std::collections::BTreeMap::new(),
         }
     }
     pub fn raster(name: impl Into<String>, format: PixelFormat) -> Self {
@@ -979,6 +985,11 @@ pub struct Document {
     /// How the document's lossy file was encoded (its JPEG quality, WebP lossy or lossless,
     /// PNG stereo pairing), so a save writes it back the same way rather than at fixed defaults.
     pub file_encoding: FileEncoding,
+    /// Binary data process plug-ins store in the document, keyed `<plugin-id>/<name>`: a plug-in's
+    /// per-document state (prompts, history, settings). Saved in `.pcraft` and as PSD/PSB image
+    /// resource [`plugin_data::PSD_RESOURCE`], and kept whether or not the plug-in is installed.
+    /// Not part of the undo history: undoing an edit never takes a plug-in's data back.
+    pub plugin_data: std::collections::BTreeMap<String, Arc<Vec<u8>>>,
 }
 
 /// The encoder settings a document's file was opened or saved with: what File › Save and the
@@ -1047,6 +1058,7 @@ impl Document {
             variables: Variables::default(),
             timeline: None,
             file_encoding: FileEncoding::default(),
+            plugin_data: std::collections::BTreeMap::new(),
         }
     }
 

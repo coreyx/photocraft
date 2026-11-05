@@ -940,7 +940,13 @@ fn checked_stages(doc: &Document, name_or_ext: &str, opts: &ExportOptions, ctl: 
     photocraft_compose::discard_unreadable_pixel_caches();
     doc.scratch_health().map_err(IoError::Unsupported)?;
     let scratch_generation = photocraft_raster::spill::read_error_generation();
-    let r = export_stages(doc, name_or_ext, opts, ctl)?;
+    let mut r = export_stages(doc, name_or_ext, opts, ctl)?;
+    // Plug-ins' document data only has a place in .pcraft, PSD and PSB: say so rather than drop it
+    // without a word.
+    let ext = extension(name_or_ext);
+    if !doc.plugin_data.is_empty() && ext != photocraft_format::EXTENSION && ext != "psd" && ext != "psb" {
+        r.warnings.push("plug-in data stored in this document isn't saved in this format; save as .pcraft, PSD or PSB to keep it".into());
+    }
     photocraft_raster::spill::check_since(scratch_generation).map_err(IoError::Unsupported)?;
     doc.scratch_health().map_err(IoError::Unsupported)?;
     ctl.check().map_err(|_| IoError::Cancelled)?;

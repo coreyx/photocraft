@@ -229,6 +229,7 @@ fn layer_m(l: &Layer, sink: &mut dyn Sink) -> LayerM {
         video: l.video.as_ref().map(|v| video_m(v, sink)),
         xmp: l.xmp.as_deref().map(str::to_string),
         uid: Some(photocraft_doc::uid_string(l.uid)),
+        plugin_data: l.plugin_data.clone(),
     }
 }
 
@@ -282,6 +283,7 @@ pub(crate) fn doc_m(d: &Document, sink: &mut dyn Sink) -> DocM {
         notes: d.notes.clone(),
         text_styles: d.text_styles.clone(),
         slices: d.slices.clone(),
+        plugin_data: d.plugin_data.iter().map(|(key, data)| crate::manifest::PluginBlobM { key: key.clone(), data: sink.blob(data) }).collect(),
     }
 }
 
@@ -590,6 +592,7 @@ impl Loader<'_> {
             // An unreadable uid is replaced rather than refused: the uid only identifies the
             // layer, and a fresh one keeps the document fully usable.
             uid: m.uid.as_deref().and_then(photocraft_doc::parse_uid).unwrap_or_else(photocraft_doc::new_uid),
+            plugin_data: m.plugin_data.clone(),
         })
     }
 
@@ -673,6 +676,10 @@ impl Loader<'_> {
                 vd.layer = self.id_map.get(&vd.layer.0).copied().unwrap_or(LayerId(u64::MAX - vd.layer.0.min(u64::MAX / 2)));
             }
         }
+        let mut plugin_data = std::collections::BTreeMap::new();
+        for blob in &m.plugin_data {
+            plugin_data.insert(blob.key.clone(), self.fetch.blob(&blob.data)?);
+        }
         let id = if self.preserve_ids { DocId(m.id) } else { DocId::fresh() };
         Ok(Document {
             id,
@@ -707,6 +714,7 @@ impl Loader<'_> {
             notes: m.notes.clone(),
             text_styles: m.text_styles.clone(),
             slices,
+            plugin_data,
         })
     }
 

@@ -626,7 +626,10 @@ impl Ex<'_> {
         // With layer uids on, the uid joins the packet (a minimal one when the layer has none);
         // import takes it out again, so the user's XMP is unchanged.
         let with_uid = if self.layer_uids { photocraft_doc::plugin_xmp::set(l.xmp.as_deref(), "uid", &photocraft_doc::uid_string(l.uid)) } else { None };
-        let Some(xmp) = with_uid.as_deref().or(l.xmp.as_deref()) else { return };
+        // Process plug-ins' values on the layer join it the same way, whenever the layer has any.
+        let base = with_uid.as_deref().or(l.xmp.as_deref());
+        let with_data = photocraft_doc::plugin_data::layer_xmp(base, &l.plugin_data);
+        let Some(xmp) = with_data.as_deref().or(base) else { return };
         let pos = raw.iter().position(|(k, _)| k == b"shmd");
         match photocraft_psd::metadata::put_layer_xmp(pos.map(|i| raw[i].1.as_slice()), xmp) {
             Ok(data) => match pos {

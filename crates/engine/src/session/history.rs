@@ -32,10 +32,9 @@ impl Session {
                 true
             }
             Some((mut d, layers)) => {
-                // Save As changes file identity outside history, just like the saved path.
-                if d.name != st.doc.name {
-                    Arc::make_mut(&mut d).name.clone_from(&st.doc.name);
-                }
+                // Save As changes file identity outside history, just like the saved path, and
+                // process plug-ins' data is outside it too.
+                carry_outside_history(&st.doc, &mut d);
                 if keep_visibility {
                     carry_visibility(&st.doc, &mut d, &changed);
                 }
@@ -64,9 +63,7 @@ impl Session {
         st.coalesce = None;
         match st.history.redo(st.doc.clone()) {
             Some((mut d, layers)) => {
-                if d.name != st.doc.name {
-                    Arc::make_mut(&mut d).name.clone_from(&st.doc.name);
-                }
+                carry_outside_history(&st.doc, &mut d);
                 if keep_visibility {
                     // The step being redone sets the visibility it changed again.
                     let changed = st.history.current_visibility().to_vec();
@@ -108,9 +105,7 @@ impl Session {
             }
             return undone;
         };
-        if d.name != st.doc.name {
-            Arc::make_mut(&mut d).name.clone_from(&st.doc.name);
-        }
+        carry_outside_history(&st.doc, &mut d);
         if keep_visibility {
             carry_visibility(&st.doc, &mut d, &changed);
         }
@@ -122,6 +117,31 @@ impl Session {
         st.bump_revision(keep_clean);
         st.last_damage = damage;
         true
+    }
+}
+
+/// What stays as it is when the document steps to another history state `to`, taken from the
+/// current document `from`: the name (Save As changes file identity outside history), process
+/// plug-ins' document data, and their values on each layer `from` still has (matched by uid; a
+/// layer the step brings back keeps the values it had). Copies `to` only when something differs.
+pub(crate) fn carry_outside_history(from: &Document, to: &mut Arc<Document>) {
+    if to.name != from.name {
+        Arc::make_mut(to).name.clone_from(&from.name);
+    }
+    if to.plugin_data != from.plugin_data {
+        Arc::make_mut(to).plugin_data.clone_from(&from.plugin_data);
+    }
+    let current: std::collections::HashMap<u128, &std::collections::BTreeMap<String, String>> =
+        from.walk().into_iter().map(|(_, _, l)| (l.uid, &l.plugin_data)).collect();
+    let stale: Vec<(LayerId, std::collections::BTreeMap<String, String>)> =
+        to.walk().into_iter().filter_map(|(_, _, l)| current.get(&l.uid).filter(|data| ***data != l.plugin_data).map(|data| (l.id, (*data).clone()))).collect();
+    if !stale.is_empty() {
+        let doc = Arc::make_mut(to);
+        for (id, data) in stale {
+            if let Some(layer) = doc.layer_mut(id) {
+                layer.plugin_data = data;
+            }
+        }
     }
 }
 
