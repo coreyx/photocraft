@@ -228,6 +228,7 @@ fn layer_m(l: &Layer, sink: &mut dyn Sink) -> LayerM {
         advanced: l.advanced,
         video: l.video.as_ref().map(|v| video_m(v, sink)),
         xmp: l.xmp.as_deref().map(str::to_string),
+        uid: Some(photocraft_doc::uid_string(l.uid)),
     }
 }
 
@@ -586,6 +587,9 @@ impl Loader<'_> {
             advanced: m.advanced,
             video: m.video.as_ref().map(|v| self.video(v)).transpose()?,
             xmp: m.xmp.as_deref().map(Arc::from),
+            // An unreadable uid is replaced rather than refused: the uid only identifies the
+            // layer, and a fresh one keeps the document fully usable.
+            uid: m.uid.as_deref().and_then(photocraft_doc::parse_uid).unwrap_or_else(photocraft_doc::new_uid),
         })
     }
 

@@ -481,7 +481,16 @@ impl Ctx<'_> {
         if let Some(i) = l.psd_blocks.iter().position(|(k, _)| k == b"shmd")
             && let Some((xmp, rest)) = photocraft_psd::metadata::take_layer_xmp(&l.psd_blocks[i].1)
         {
-            l.xmp = Some(Arc::from(xmp));
+            // A persistent uid written by PhotoCraft comes back out of the packet (which then
+            // holds only the user's own XMP, or none when PhotoCraft made it just for the uid).
+            let xmp = match photocraft_doc::plugin_xmp::get(&xmp, "uid").and_then(|u| photocraft_doc::parse_uid(&u)) {
+                Some(uid) => {
+                    l.uid = uid;
+                    photocraft_doc::plugin_xmp::remove(&xmp, "uid")
+                }
+                None => Some(xmp.to_string()),
+            };
+            l.xmp = xmp.map(|x| Arc::from(x.as_str()));
             match rest {
                 Some(data) => l.psd_blocks[i].1 = Arc::new(data),
                 None => {

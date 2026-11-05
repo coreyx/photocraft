@@ -1091,3 +1091,16 @@ fn arrow_document_is_backward_compatible() {
     let loaded = load_from_bytes(&bytes).unwrap();
     assert_eq!(loaded, doc);
 }
+
+#[test]
+fn layer_uids_survive_a_native_round_trip() {
+    let mut doc = Document::new("uids", photocraft_geom::Size::new(4, 4), ColorMode::Rgb, SampleType::U8);
+    let child = Layer::raster("child", doc.pixel_format());
+    doc.layers.push(Layer::group("group", vec![child]));
+    doc.layers.push(Layer::raster("top", doc.pixel_format()));
+    let before: Vec<u128> = doc.walk().into_iter().map(|(_, _, l)| l.uid).collect();
+    let bytes = save_to_bytes(&doc, &SaveOptions::default()).unwrap();
+    let back = load_from_bytes(&bytes).unwrap();
+    let after: Vec<u128> = back.walk().into_iter().map(|(_, _, l)| l.uid).collect();
+    assert_eq!(after, before);
+}

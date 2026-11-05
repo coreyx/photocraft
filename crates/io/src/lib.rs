@@ -404,6 +404,11 @@ pub struct ExportOptions {
     /// omit it; check the manifest's `full_composite` member ([`photocraft_format::read_full_composite`]
     /// reads it). Off by default.
     pub pcraft_full_composite: bool,
+    /// PSD/PSB and layered TIFF: write each layer's persistent uid into its XMP packet
+    /// ([`photocraft_doc::plugin_xmp`]), so process plug-ins find their layers after a reload.
+    /// Off by default: it adds an XMP block to every layer, so it is only turned on for documents
+    /// that process plug-ins have stored data in. `.pcraft` always keeps the uids.
+    pub layer_uids: bool,
 }
 
 impl Default for ExportOptions {
@@ -421,6 +426,7 @@ impl Default for ExportOptions {
             pcraft_cache: None,
             read_linked_files: true,
             pcraft_full_composite: false,
+            layer_uids: false,
         }
     }
 }
@@ -1011,6 +1017,7 @@ fn export_stages(doc: &Document, name_or_ext: &str, opts: &ExportOptions, ctl: &
             document_path: opts.document_path.clone(),
             read_linked_files: opts.read_linked_files,
             stage_on_scratch_from: Some(psd_export::STAGE_DOCUMENTS_FROM),
+            layer_uids: opts.layer_uids,
             ..Default::default()
         };
         // The preview is rendered first, while only the document is in memory: its full-size

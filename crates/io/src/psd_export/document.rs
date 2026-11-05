@@ -93,6 +93,7 @@ fn export_supported_document(
             let raw = doc.size.area().saturating_mul(fmt.bytes_per_pixel() as u64).saturating_mul(doc.walk().len() as u64 + 1);
             super::stage::Stage::for_document(raw, opts.stage_on_scratch_from)
         },
+        layer_uids: opts.layer_uids,
     };
     add_format_warnings(doc, opts, fmt, big, duotone_inks.is_some(), &mut ex.warnings);
     index_layer_ids_and_text(doc, &mut ex);

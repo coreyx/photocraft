@@ -165,6 +165,7 @@ fn unpacked(so: &Layer, mut layers: Vec<Layer>) -> Layer {
     }
     let mut g = so.clone();
     g.id = LayerId::fresh();
+    g.uid = photocraft_doc::new_uid();
     g.psd_id = None;
     g.blend = blend;
     g.content = LayerContent::Group(Group { children: layers, expanded: true, artboard: None, frame_stroke: None });

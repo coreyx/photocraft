@@ -5180,6 +5180,7 @@ dependencies = [
  "photocraft-raster",
  "serde",
  "serde_json",
+ "web-time",
 ]
 
 [[package]]

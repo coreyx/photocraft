@@ -8,6 +8,8 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+# Seeds new layer uids (a clock that also works in the browser).
+web-time = { workspace = true }
 photocraft-geom = { workspace = true }
 photocraft-color = { workspace = true }
 photocraft-raster = { workspace = true }

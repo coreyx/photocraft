@@ -77,6 +77,8 @@ pub struct PsdExportOptions {
     /// pixel bytes (layers and composite) reach this and spilling is on (`None`: never). The
     /// save then holds the file model's structure, not a second copy of its pixels (#5333).
     pub stage_on_scratch_from: Option<u64>,
+    /// Write each layer's persistent uid into its XMP packet ([`crate::ExportOptions::layer_uids`]).
+    pub layer_uids: bool,
 }
 
 impl Default for PsdExportOptions {
@@ -90,6 +92,7 @@ impl Default for PsdExportOptions {
             document_path: None,
             read_linked_files: true,
             stage_on_scratch_from: None,
+            layer_uids: false,
         }
     }
 }
@@ -135,6 +138,8 @@ struct Ex<'c> {
     background: Option<photocraft_doc::LayerId>,
     /// Where encoded channels go instead of memory ([`PsdExportOptions::stage_on_scratch_from`]).
     stage: Option<std::sync::Arc<stage::Stage>>,
+    /// Whether layer uids go into the layers' XMP ([`PsdExportOptions::layer_uids`]).
+    layer_uids: bool,
 }
 
 /// The layer Photoshop should open as its Background: the bottom top-level layer when it is a
@@ -618,7 +623,10 @@ impl Ex<'_> {
     /// Writes the layer's XMP packet into its `shmd` block (created when it has none). Import
     /// takes the packet out of `shmd`, so a layer without one keeps the block as it was.
     fn layer_xmp_block(&mut self, l: &Layer, raw: &mut Vec<([u8; 4], Vec<u8>)>) {
-        let Some(xmp) = l.xmp.as_deref() else { return };
+        // With layer uids on, the uid joins the packet (a minimal one when the layer has none);
+        // import takes it out again, so the user's XMP is unchanged.
+        let with_uid = if self.layer_uids { photocraft_doc::plugin_xmp::set(l.xmp.as_deref(), "uid", &photocraft_doc::uid_string(l.uid)) } else { None };
+        let Some(xmp) = with_uid.as_deref().or(l.xmp.as_deref()) else { return };
         let pos = raw.iter().position(|(k, _)| k == b"shmd");
         match photocraft_psd::metadata::put_layer_xmp(pos.map(|i| raw[i].1.as_slice()), xmp) {
             Ok(data) => match pos {

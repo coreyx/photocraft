@@ -100,3 +100,45 @@ fn an_unreadable_shmd_is_kept_and_reported() {
     assert!(out.warnings.iter().any(|w| w.contains("XMP metadata was not saved")), "{:?}", out.warnings);
     assert_eq!(layer_shmd(&PsdFile::from_bytes(&out.bytes).unwrap(), "L"), Some([0, 0, 0, 9].as_slice()));
 }
+
+fn uids(d: &Document) -> Vec<(String, u128)> {
+    d.walk().into_iter().map(|(_, _, l)| (l.name.clone(), l.uid)).collect()
+}
+
+#[test]
+fn layer_uids_round_trip_through_every_layered_format_when_asked() {
+    let psd = ExportOptions { layer_uids: true, ..Default::default() };
+    let psb = ExportOptions { force_psb: true, layer_uids: true, ..Default::default() };
+    let tiff = ExportOptions { tiff_layers: true, layer_uids: true, ..Default::default() };
+    for depth in SampleType::ALL {
+        let doc = sample(depth);
+        for (path, opts) in [("x.psd", &psd), ("x.psb", &psb), ("x.tif", &tiff), ("x.pcraft", &ExportOptions::default())] {
+            let bytes = export(&doc, path, opts).unwrap().bytes;
+            let back = import(path, &bytes).unwrap().document;
+            assert_eq!(uids(&back), uids(&doc), "{path} {depth:?}");
+            // The user's own packets are exactly as they were; a layer without one still has none.
+            assert_eq!(xmps(&back), xmps(&doc), "{path} {depth:?}");
+        }
+    }
+}
+
+#[test]
+fn layer_uids_are_off_by_default_in_photoshop_formats() {
+    let doc = sample(SampleType::U8);
+    let bytes = export(&doc, "x.psd", &ExportOptions::default()).unwrap().bytes;
+    // Nothing is added: the plain layer still has no metadata block, and the uids are new.
+    let f = PsdFile::from_bytes(&bytes).unwrap();
+    assert!(layer_shmd(&f, "Plain").is_none());
+    assert!(!String::from_utf8_lossy(&bytes).contains("pcpp:uid"));
+    let back = import("x.psd", &bytes).unwrap().document;
+    assert!(uids(&back).iter().zip(uids(&doc)).all(|(a, b)| a.1 != b.1));
+}
+
+#[test]
+fn a_damaged_uid_in_a_psd_is_replaced_not_fatal() {
+    let mut doc = sample(SampleType::U8);
+    doc.layers[0].xmp = photocraft_doc::plugin_xmp::set(Some(A), "uid", "not-a-uid").map(|x| Arc::from(x.as_str()));
+    let bytes = export(&doc, "x.psd", &ExportOptions::default()).unwrap().bytes;
+    let back = import("x.psd", &bytes).unwrap().document;
+    assert_ne!(back.layers[0].uid, 0);
+}

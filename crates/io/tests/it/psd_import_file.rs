@@ -29,15 +29,20 @@ impl Drop for TempDir {
 
 /// The document's debug form with every `…Id(n)` number blanked.
 fn without_ids(doc: &photocraft_doc::Document) -> String {
-    let s = format!("{doc:?}");
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s.as_str();
-    while let Some(at) = rest.find("Id(") {
-        out.push_str(&rest[..at + 3]);
-        rest = rest[at + 3..].trim_start_matches(|c: char| c.is_ascii_digit());
+    // Session ids (`…Id(n)`) and, for a file without stored uids, the persistent layer uids
+    // (`uid: n`) are both assigned afresh at each open.
+    let mut s = format!("{doc:?}");
+    for marker in ["Id(", "uid: "] {
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s.as_str();
+        while let Some(at) = rest.find(marker) {
+            out.push_str(&rest[..at + marker.len()]);
+            rest = rest[at + marker.len()..].trim_start_matches(|c: char| c.is_ascii_digit());
+        }
+        out.push_str(rest);
+        s = out;
     }
-    out.push_str(rest);
-    out
+    s
 }
 
 fn open(name: &str, path: &std::path::Path) -> Result<ImportResult, photocraft_io::IoError> {

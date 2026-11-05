@@ -523,3 +523,24 @@ fn declared_canvas_outside_the_budget_is_refused() {
     let opts = LoadOptions { max_canvas_side: 65_536, ..Default::default() };
     assert!(matches!(load_from_bytes_with(&with_size(65_537, 1), &opts), Err(FormatError::LimitExceeded(_))));
 }
+
+/// Bundles from before layer uids existed, or with a damaged uid, load with fresh, distinct uids.
+#[test]
+fn missing_or_damaged_layer_uids_are_replaced_on_load() {
+    let b = rebuild(&sample(), |n, d| {
+        Some(if n == "manifest.json" {
+            let mut v: serde_json::Value = serde_json::from_slice(&d).unwrap();
+            let layers = v["document"]["layers"].as_array_mut().unwrap();
+            assert!(layers.len() >= 2, "the sample has several layers");
+            layers[0]["uid"] = serde_json::json!("garbage");
+            layers[1].as_object_mut().unwrap().remove("uid");
+            serde_json::to_vec(&v).unwrap()
+        } else {
+            d
+        })
+    });
+    let doc = load_from_bytes(&b).unwrap();
+    let uids: Vec<u128> = doc.walk().into_iter().map(|(_, _, l)| l.uid).collect();
+    let unique: std::collections::HashSet<u128> = uids.iter().copied().collect();
+    assert_eq!(unique.len(), uids.len());
+}

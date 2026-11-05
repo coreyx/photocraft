@@ -16,6 +16,7 @@ pub mod comps;
 pub mod effects;
 pub mod mode;
 pub mod pattern;
+pub mod plugin_xmp;
 pub mod slices;
 pub mod text;
 pub mod text_styles;
@@ -76,6 +77,39 @@ impl SmartContentsId {
 
 /// Advance the process-wide id counter (shared by layer, document and smart-contents ids) past `max`, so ids
 /// loaded from a file never collide with ids minted later.
+/// A new persistent layer uid: a per-process random value in the high half, a counter in the
+/// low half, so uids are unique within a session and, with overwhelming probability, across
+/// sessions and documents.
+pub fn new_uid() -> u128 {
+    static SEED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let seed = *SEED.get_or_init(|| {
+        use std::hash::{BuildHasher, Hasher};
+        // RandomState's keys come from the OS's randomness on desktop platforms; the address
+        // and time mixed in keep two processes apart even where they don't.
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_usize(std::ptr::addr_of!(COUNTER) as usize);
+        hasher.write_u64(web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0));
+        hasher.finish()
+    });
+    (u128::from(seed) << 64) | u128::from(COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
+/// A uid as the protocol and files spell it: 32 lowercase hex digits in UUID layout.
+pub fn uid_string(uid: u128) -> String {
+    let h = format!("{uid:032x}");
+    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+}
+
+/// Parse a uid written by [`uid_string`] (dashes optional).
+pub fn parse_uid(text: &str) -> Option<u128> {
+    let hex: String = text.chars().filter(|c| *c != '-').collect();
+    if hex.len() != 32 {
+        return None;
+    }
+    u128::from_str_radix(&hex, 16).ok()
+}
+
 pub fn ensure_ids_above(max: u64) {
     NEXT_ID.fetch_max(max.saturating_add(1), Ordering::Relaxed);
 }
@@ -678,6 +712,11 @@ pub struct Layer {
     /// embedding apps keep data about the layer under their own namespaces. Copied by
     /// [`Layer::duplicate`], as in Photoshop. PSD `shmd` › `cust` › `layerXMP`.
     pub xmp: Option<Arc<str>>,
+    /// Persistent identity: unlike [`Layer::id`], which is handed out afresh each session, the uid
+    /// is saved with the document (natively in `.pcraft`, as XMP in PSD, PSB and layered TIFF)
+    /// and survives save and reload. Process plug-ins name layers by it. A copied layer gets a
+    /// new one (see [`Layer::duplicate`]); a layer from a file without one gets one on load.
+    pub uid: u128,
 }
 
 impl Layer {
@@ -712,6 +751,7 @@ impl Layer {
             advanced: AdvancedBlending::default(),
             video: None,
             xmp: None,
+            uid: new_uid(),
         }
     }
     pub fn raster(name: impl Into<String>, format: PixelFormat) -> Self {
@@ -760,6 +800,7 @@ impl Layer {
     }
     fn reassign_ids(&mut self) {
         self.id = LayerId::fresh();
+        self.uid = new_uid();
         self.psd_id = None;
         if let Some(ch) = self.children_mut() {
             for c in ch {
@@ -1320,6 +1361,26 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn layer_uids_are_unique_formatted_and_renewed_by_duplicate() {
+        let a = super::Layer::raster("a", photocraft_color::PixelFormat::RGBA8);
+        let b = super::Layer::raster("b", photocraft_color::PixelFormat::RGBA8);
+        assert_ne!(a.uid, b.uid);
+        let text = super::uid_string(a.uid);
+        assert_eq!(text.len(), 36);
+        assert_eq!(text.matches('-').count(), 4);
+        assert_eq!(super::parse_uid(&text), Some(a.uid));
+        assert_eq!(super::parse_uid(&text.replace('-', "")), Some(a.uid));
+        assert_eq!(super::parse_uid("nope"), None);
+        let mut group = super::Layer::group("g", vec![a.clone()]);
+        let dup = group.duplicate();
+        assert_ne!(dup.uid, group.uid);
+        assert_ne!(dup.children().unwrap()[0].uid, a.uid, "children get new uids too");
+        // A clone (undo snapshots, copies of the document) keeps the identity.
+        group.name = "renamed".into();
+        assert_eq!(group.clone().uid, group.uid);
+    }
     use super::*;
 
     fn doc() -> Document {
