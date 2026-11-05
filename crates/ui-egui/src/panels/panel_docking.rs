@@ -125,7 +125,7 @@ pub(crate) fn normalize(raw: &str) -> Option<&'static str> {
 }
 
 fn registered(id: &str) -> bool {
-    id == CANVAS || normalize(id) == Some(id)
+    id == CANVAS || normalize(id) == Some(id) || crate::process_plugin_panels::is_plugin_panel(id)
 }
 
 pub(crate) fn valid(layout: &Layout<String>) -> bool {
@@ -184,6 +184,11 @@ fn legacy_layout(app: &PhotocraftApp, all: bool) -> Layout<String> {
         }
         let height = app.ui.dock.heights.contains_key(&group).then(|| app.ui.dock.height(group));
         groups.push(craft_ui::docking::Group { height, ..craft_ui::docking::Group::new(panels, active) });
+    }
+    // Process plug-ins' panels: one tab group at the bottom of the column.
+    let plugin_panels = crate::process_plugin_panels::native_group(app);
+    if !plugin_panels.is_empty() {
+        groups.push(craft_ui::docking::Group::new(plugin_panels, 0));
     }
     let (columns, width) = if groups.is_empty() { (Vec::new(), 0.0) } else { (vec![Column::new(groups, default_width(pro))], default_width(pro)) };
     Layout { root: Some(with_canvas(Node::Dock { side: Side::End, columns }, width)), floating }
@@ -274,6 +279,9 @@ fn ensure(app: &PhotocraftApp, workspace: &mut Workspace, panel: &str) -> Result
 /// the one before it; else where craft-ui opens a panel.
 fn default_place(app: &PhotocraftApp, layout: &Layout<String>, panel: &str) -> Action<String> {
     let open = Action::Open { panel: panel.to_owned(), anchor: None };
+    if crate::process_plugin_panels::is_plugin_panel(panel) {
+        return plugin_place(layout, panel).unwrap_or(open);
+    }
     let Some(group) = PANELS.iter().find(|p| p.0 == panel).map(|p| p.2) else { return open };
     let pro = app.ui.theme.is_pro();
     let tabs: Vec<&str> = app.ui.dock.ordered_tabs(group, pro).iter().filter_map(|(_, label)| normalize(label)).collect();
@@ -295,6 +303,51 @@ fn default_place(app: &PhotocraftApp, layout: &Layout<String>, panel: &str) -> A
     } else {
         open
     }
+}
+
+/// Where a plug-in panel opens: a tab of another plug-in panel's group, else a new group below
+/// the dock column's last one.
+fn plugin_place(layout: &Layout<String>, panel: &str) -> Option<Action<String>> {
+    let docked = docked(layout);
+    let column: Vec<&String> = docked.panels().into_iter().filter(|p| p.as_str() != panel && in_dock_column(layout, p)).collect();
+    if let Some(mate) = column.iter().find(|p| crate::process_plugin_panels::is_plugin_panel(p)) {
+        return Some(Action::OpenAt { panel: panel.to_owned(), anchor: (*mate).clone(), placement: Placement::Tab { before: None } });
+    }
+    let last = column.last()?;
+    Some(Action::OpenAt { panel: panel.to_owned(), anchor: (*last).clone(), placement: Placement::Group { below: true, height: None } })
+}
+
+/// Whether plug-in panel `id` is in the dock: in the native dock every registered one is.
+pub(crate) fn plugin_panel_shown(app: &PhotocraftApp, id: &str) -> bool {
+    match &app.ui.docking {
+        Some(workspace) => workspace.layout.contains(&id.to_owned()),
+        None => app.process_plugin_ui.panels.registered.contains_key(id),
+    }
+}
+
+/// Place the plug-in panels registered since last frame in a rearranged workspace, unless the
+/// user closed them there (the native dock lays out every registered panel itself).
+fn place_new_plugin_panels(app: &mut PhotocraftApp) {
+    let fresh = std::mem::take(&mut app.process_plugin_ui.panels.fresh);
+    let Some(workspace) = app.ui.docking.as_ref() else { return };
+    let closed = |id: &String| workspace.layout.contains(id) || workspace.hidden.iter().any(|(hidden, _)| hidden == id);
+    let new: Vec<String> = fresh.into_iter().filter(|id| !closed(id)).collect();
+    if new.is_empty() {
+        return;
+    }
+    let Ok(mut workspace) = workspace_of(app) else { return };
+    let returns = app.ui.docking_returns.clone();
+    for id in &new {
+        if let Err(error) = ensure(app, &mut workspace, id) {
+            log::debug!("plug-in panel {id}: {error}");
+        }
+    }
+    commit(app, workspace, returns);
+}
+
+#[cfg(test)]
+pub(crate) fn place_new_plugin_panels_for_tests(app: &mut PhotocraftApp) {
+    place_new_plugin_panels(app);
 }
 
 /// The panel a command names, if any.
@@ -352,6 +405,21 @@ pub(crate) fn command(app: &mut PhotocraftApp, id: &str, params: &Value) -> Opti
     if id == "window.panel.group" {
         return Some(group_command(app, params));
     }
+    if let Some(panel) =
+        id.strip_prefix("window.panel.").or_else(|| id.strip_prefix("window.toggle.")).filter(|p| crate::process_plugin_panels::is_plugin_panel(p))
+    {
+        let layout = app.ui.docking.as_ref().map(|workspace| &workspace.layout);
+        let showing = plugin_panel_shown(app, panel);
+        let show = match params.get("show").or_else(|| params.get("on")) {
+            None => !showing || layout.is_some_and(|layout| !panel_active(layout, panel)),
+            Some(value) => match value.as_bool() {
+                Some(show) => show,
+                None => return Some(Err("show must be a boolean".into())),
+            },
+        };
+        let id = if show { "window.panel.activate" } else { "window.panel.close" };
+        return Some(dock_command(app, id, &json!({"panel": panel})));
+    }
     if let Some(panel) = id.strip_prefix("window.panel.").or_else(|| id.strip_prefix("window.toggle.")).and_then(normalize) {
         if app.ui.docking.is_none() && panel != "brushes" {
             return None;
@@ -379,6 +447,9 @@ pub(crate) fn command(app: &mut PhotocraftApp, id: &str, params: &Value) -> Opti
 }
 
 pub(crate) fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
+    if let Some(panel) = id.strip_prefix("window.panel.").filter(|p| crate::process_plugin_panels::is_plugin_panel(p)) {
+        return Some(plugin_panel_shown(app, panel));
+    }
     let workspace = app.ui.docking.as_ref()?;
     let panel = id.strip_prefix("window.panel.").or_else(|| id.strip_prefix("window.toggle.")).and_then(normalize)?;
     Some(workspace.layout.contains(&panel.to_string()))
@@ -401,8 +472,9 @@ fn dock_command(app: &mut PhotocraftApp, id: &str, params: &Value) -> Result<Val
             Some(value) => {
                 // Docks and frames open beside the canvas, so it may be an anchor or a target.
                 let canvas = key != "panel" && value.as_str().is_some_and(|raw| raw.trim().eq_ignore_ascii_case(CANVAS));
-                let panel = if canvas { Some(CANVAS) } else { value.as_str().and_then(normalize) };
-                let panel = panel.ok_or_else(|| format!("{key} must name a registered panel"))?;
+                let plugin = value.as_str().filter(|raw| crate::process_plugin_panels::is_plugin_panel(raw));
+                let panel = if canvas { Some(CANVAS) } else { plugin.or_else(|| value.as_str().and_then(normalize)) };
+                let panel = panel.ok_or_else(|| format!("{key} must name a registered panel"))?.to_owned();
                 fields.insert(key.into(), json!(panel));
             }
         }
@@ -547,12 +619,20 @@ pub(crate) fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         set_dock_width(app, width.clamp(*range.start(), *range.end()));
     }
     native_dock_width(app, ui.ctx());
+    place_new_plugin_panels(app);
     let layout = match &app.ui.docking {
         Some(workspace) => workspace.layout.clone(),
         None => legacy(app),
     };
     let collapsed = collapsed_members(app, &layout);
     let layout = presented(layout, &collapsed);
+    let plugin_labels: std::collections::HashMap<String, String> = layout
+        .panels()
+        .into_iter()
+        .chain(layout.floating.iter().flat_map(|window| window.panels()))
+        .filter(|id| crate::process_plugin_panels::is_plugin_panel(id))
+        .map(|id| (id.clone(), app.plugin_panel_label(id)))
+        .collect();
     let fillers = fillers(&layout);
     let reveal = app.ui.docking_reveal.take();
     let t = crate::theme::Tokens::get(ui.ctx());
@@ -595,7 +675,7 @@ pub(crate) fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         ui,
         &layout,
         &style,
-        |id| PANELS.iter().find(|p| p.0 == id).map(|p| tl!(p.1).to_string()).unwrap_or_else(|| id.clone()),
+        |id| PANELS.iter().find(|p| p.0 == id).map(|p| tl!(p.1).to_string()).or_else(|| plugin_labels.get(id).cloned()).unwrap_or_else(|| id.clone()),
         permissions,
         |id| {
             if id == CANVAS {
@@ -824,6 +904,10 @@ fn fillers(layout: &Layout<String>) -> std::collections::HashSet<String> {
 }
 
 fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: &str) {
+    if crate::process_plugin_panels::is_plugin_panel(id) {
+        crate::process_plugin_panels::body(app, ui, id);
+        return;
+    }
     let Some((_, label, group)) = PANELS.iter().find(|p| p.0 == id) else { return };
     let pro = crate::theme::Tokens::get(ui.ctx()).pro;
     let Some(tab) = group.tabs(pro).iter().position(|name| name == label) else { return };

@@ -59,6 +59,9 @@ impl PhotocraftApp {
         p: &Value,
         payload: &[u8],
     ) -> Option<Result<Value, ErrorBody>> {
+        if let Some(answer) = self.serve_plugin_panel(plugin, method, p) {
+            return Some(answer);
+        }
         Some(match method {
             "image.put" => self.plugin_image_put(plugin, p, payload),
             "notice.show" => self.plugin_notice(plugin, p),

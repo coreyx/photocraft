@@ -83,6 +83,7 @@ impl PhotocraftApp {
     /// A plug-in changed state: when it is no longer running, whatever it left half-done (an
     /// open undo group, its progress indicators) ends with it.
     fn process_plugin_state_change(&mut self, plugin: &str, state: &PluginState) {
+        self.plugin_panels_state(plugin, state);
         if !state.is_live() && *state != PluginState::Starting {
             self.session.plugin_disconnected(plugin);
             self.clear_plugin_progress(plugin);

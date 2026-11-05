@@ -126,6 +126,8 @@ pub struct Owner {
 pub struct PluginUi {
     pub trees: HashMap<Owner, Tree>,
     pub images: ImageCache,
+    /// Registered panels and how their input reaches the plug-in (`process_plugin_panels`).
+    pub panels: crate::process_plugin_panels::Panels,
 }
 
 impl PluginUi {
