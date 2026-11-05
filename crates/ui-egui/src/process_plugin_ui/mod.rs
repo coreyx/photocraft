@@ -130,6 +130,8 @@ pub struct PluginUi {
     pub panels: crate::process_plugin_panels::Panels,
     /// Open dialogs and waiting message boxes (`process_plugin_dialogs`).
     pub dialogs: crate::process_plugin_dialogs::Dialogs,
+    /// Registered actions by command id (`process_plugin_actions`).
+    pub actions: std::collections::BTreeMap<String, crate::process_plugin_actions::Action>,
 }
 
 impl PluginUi {

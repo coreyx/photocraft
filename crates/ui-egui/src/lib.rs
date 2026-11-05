@@ -73,6 +73,9 @@ pub use state::{Tool, UiState};
 mod app;
 mod input;
 mod prefs;
+mod process_plugin_actions;
+#[cfg(test)]
+mod process_plugin_actions_tests;
 mod process_plugin_dialogs;
 #[cfg(test)]
 mod process_plugin_dialogs_tests;

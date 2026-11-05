@@ -65,6 +65,9 @@ impl PhotocraftApp {
         if let Some(answer) = self.serve_plugin_dialog(plugin, method, p) {
             return Some(answer);
         }
+        if let Some(answer) = self.serve_plugin_action(plugin, method, p) {
+            return Some(answer);
+        }
         Some(match method {
             "image.put" => self.plugin_image_put(plugin, p, payload),
             "notice.show" => self.plugin_notice(plugin, p),
@@ -168,11 +171,13 @@ impl PhotocraftApp {
         Ok(empty())
     }
 
-    /// Drop the progress indicators, widget trees, images and dialogs of a plug-in that stopped.
+    /// Drop the progress indicators, widget trees, images, dialogs and actions of a plug-in that
+    /// stopped.
     pub(crate) fn clear_plugin_progress(&mut self, plugin: &str) {
         self.process_plugin_progress.retain(|t| t.plugin != plugin);
         self.process_plugin_ui.drop_plugin(plugin);
         self.drop_plugin_dialogs(plugin);
+        self.drop_plugin_actions(plugin);
     }
 
     /// Cancel was clicked on a plug-in's progress: ask the plug-in to stop that task.

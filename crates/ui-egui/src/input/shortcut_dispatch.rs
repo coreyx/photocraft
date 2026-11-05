@@ -50,6 +50,9 @@ pub fn bindings(app: &PhotocraftApp) -> Vec<(String, KeyboardShortcut)> {
     let prefs = app.session.prefs();
     let action_ids: Vec<String> = app.session.actions.list.iter().map(|a| crate::actions::shortcut_id(&a.name)).collect();
     let actions = action_ids.iter().map(|id| (id.as_str(), prefs.shortcut(id, None).map(str::to_string)));
+    // Process plug-ins' registered actions: their default keys, or the user's.
+    let plugin_actions = crate::process_plugin_actions::default_shortcuts(app);
+    let plugin_actions = plugin_actions.iter().map(|(id, default)| (id.as_str(), prefs.shortcut(id, default.as_deref()).map(str::to_string)));
     // The Keyboard Shortcuts dialog lists Photoshop's Window › <panel> item (`window.panel.*`)
     // in place of the shell command it runs (`window.toggle.*`, see `menus::panel_alias`), so an
     // edit to that row reassigns or removes the shell command's default too (#1272).
@@ -76,6 +79,7 @@ pub fn bindings(app: &PhotocraftApp) -> Vec<(String, KeyboardShortcut)> {
         .filter(|(id, sc)| {
             !sc.is_empty()
                 && !id.starts_with(crate::actions::SHORTCUT_PREFIX)
+                && !id.starts_with(crate::process_plugin_actions::PREFIX)
                 && photocraft_engine::commands::find(id).is_none()
                 && !crate::menus::UI_COMMANDS.iter().any(|c| c.0 == id.as_str())
                 && !crate::hold_keys::is_temporary(id)
@@ -85,6 +89,7 @@ pub fn bindings(app: &PhotocraftApp) -> Vec<(String, KeyboardShortcut)> {
     // default that still names it (#1272): OK clears the old owner's row, but that row can be
     // another id for the same item, or a default the dialog doesn't list.
     let mut candidates: Vec<(&str, Option<String>, bool)> = actions
+        .chain(plugin_actions)
         .chain(ui)
         .chain(engine)
         .chain(catalog)

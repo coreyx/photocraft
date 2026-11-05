@@ -43,6 +43,9 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
     if let Some(e) = crate::plugin_ui::is_enabled(app, id) {
         return e;
     }
+    if let Some(e) = crate::process_plugin_actions::is_enabled(app, id) {
+        return e;
+    }
     if let Some(e) = crate::transform_tool::is_enabled(app, id) {
         return e;
     }
@@ -120,6 +123,9 @@ const MODE_CHECKS: [&str; 11] = ["rgb", "grayscale", "cmyk", "lab", "multichanne
 /// Is a UI-level panel toggle currently on (for checkmarks)?
 pub(super) fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
     if let Some(checked) = crate::panel_docking::checked(app, id) {
+        return Some(checked);
+    }
+    if let Some(checked) = crate::process_plugin_actions::checked(app, id) {
         return Some(checked);
     }
     use photocraft_doc::{ColorMode, SampleType};
