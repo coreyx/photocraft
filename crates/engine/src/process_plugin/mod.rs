@@ -81,6 +81,7 @@ impl Session {
             "doc.info" => docs::info(self, params),
             "doc.setActive" => docs::set_active(self, params),
             "doc.resizeCanvas" => docs::resize_canvas(self, plugin, params),
+            "doc.resizeImage" => docs::resize_image(self, plugin, params),
             "doc.open" => docs::open(self, params),
             "layer.tree" => layers::tree(self, params),
             "layer.active" => layers::active(self, params),

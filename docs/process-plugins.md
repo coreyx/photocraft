@@ -131,6 +131,7 @@ open), layers by `uid` (a UUID-formatted string that survives saving and reopeni
 | `doc.info` | `{doc}` | one entry of `doc.list` |
 | `doc.setActive` | `{doc}` | `{}` |
 | `doc.resizeCanvas` | `{doc, width, height, anchor?}` | `{}` (Image › Canvas Size; one undo step) |
+| `doc.resizeImage` | `{doc, width, height, dpi?}` | `{}` (Image › Image Size, bilinear; one undo step) |
 | `doc.open` | `{path}` | `{doc}` |
 | `layer.tree` | `{doc}` | `[{uid, name, kind, visible, locked, opacity, blend, bounds, hasMask, animated, children}]`, bottom to top |
 | `layer.active` | `{doc}` | `uid` or `null` |

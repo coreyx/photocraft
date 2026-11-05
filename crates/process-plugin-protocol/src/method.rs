@@ -134,6 +134,19 @@ pub struct ResizeCanvasParams {
     pub anchor: Anchor,
 }
 
+/// Resample the whole image to `width` x `height` pixels (Image › Image Size, bilinear),
+/// optionally setting its resolution.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResizeImageParams {
+    pub doc: DocId,
+    pub width: u32,
+    pub height: u32,
+    /// Pixels per inch after the resize; unchanged when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dpi: Option<f32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenParams {
@@ -698,6 +711,7 @@ methods! {
     DocInfoMethod = "doc.info": DocRef => DocInfo;
     DocSetActive = "doc.setActive": DocRef => Empty;
     DocResizeCanvas = "doc.resizeCanvas": ResizeCanvasParams => Empty;
+    DocResizeImage = "doc.resizeImage": ResizeImageParams => Empty;
     DocOpen = "doc.open": OpenParams => DocRef;
 
     // layers

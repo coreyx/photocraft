@@ -255,6 +255,7 @@ fn hostile_parameters_never_panic() {
         "doc.info",
         "doc.setActive",
         "doc.resizeCanvas",
+        "doc.resizeImage",
         "doc.open",
         "layer.tree",
         "layer.active",
@@ -349,6 +350,28 @@ fn documents_open_from_a_path() {
     assert_eq!(call(&mut s, "doc.open", json!({"path": dir.join("missing.png").to_string_lossy()})), Err(ErrorCode::NotFound));
     assert_eq!(call(&mut s, "doc.open", json!({"path": ""})), Err(ErrorCode::Invalid));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `doc.resizeImage` resamples every layer as one undoable step, and sets the resolution.
+#[test]
+fn the_image_is_resampled() {
+    let (mut s, doc) = session();
+    call(&mut s, "doc.resizeImage", json!({"doc": doc, "width": 128, "height": 96, "dpi": 144.0})).unwrap();
+    let st = &s.documents()[0];
+    assert_eq!((st.doc.size.width, st.doc.size.height, st.doc.resolution_dpi), (128, 96, 144.0));
+    let child = uid_of(&tree(&mut s, &doc), "Child");
+    let info = tree(&mut s, &doc);
+    let bounds = info[1].children.iter().find(|l| l.uid == child).map(|l| l.bounds).unwrap();
+    assert_eq!((bounds.x, bounds.y, bounds.width, bounds.height), (20, 10, 8, 6), "content scaled with the canvas");
+    assert!(s.undo());
+    assert_eq!(s.documents()[0].doc.size.width, 64);
+    for (w, h, dpi) in [(0, 10, None), (10, u32::MAX, None), (10, 10, Some(-1.0))] {
+        let mut p = json!({"doc": doc, "width": w, "height": h});
+        if let Some(dpi) = dpi {
+            p["dpi"] = json!(dpi);
+        }
+        assert_eq!(call(&mut s, "doc.resizeImage", p), Err(ErrorCode::Invalid), "{w}x{h}");
+    }
 }
 
 /// `doc.resizeCanvas` refuses empty and absurd sizes before touching the document.

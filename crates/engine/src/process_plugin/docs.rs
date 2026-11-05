@@ -2,7 +2,7 @@
 
 use photocraft_color::{ColorMode, SampleType};
 use photocraft_process_plugin_protocol::message::{ErrorBody, ErrorCode};
-use photocraft_process_plugin_protocol::method::{Anchor, DocRef, OpenParams, ResizeCanvasParams};
+use photocraft_process_plugin_protocol::method::{Anchor, DocRef, OpenParams, ResizeCanvasParams, ResizeImageParams};
 use photocraft_process_plugin_protocol::types::{self, DocInfo};
 use serde_json::{Value, json};
 
@@ -97,6 +97,33 @@ pub(super) fn resize_canvas(s: &mut Session, plugin: &str, p: &Value) -> Outcome
             map.insert("coalesce".into(), Value::String(key));
         }
         s.execute("image.canvasSize", args).map(|_| ()).map_err(engine_error)
+    })?;
+    ok()
+}
+
+/// Resample the image (Image › Image Size, bilinear) as one undoable step, or part of the
+/// plug-in's open undo group.
+pub(super) fn resize_image(s: &mut Session, plugin: &str, p: &Value) -> Outcome {
+    let p: ResizeImageParams = params("doc.resizeImage", p)?;
+    if p.width == 0 || p.height == 0 || p.width > MAX_SIDE || p.height > MAX_SIDE {
+        return Err(ErrorBody::new(ErrorCode::Invalid, format!("image size must be 1 to {MAX_SIDE} pixels a side")));
+    }
+    if p.dpi.is_some_and(|dpi| !dpi.is_finite() || dpi <= 0.0) {
+        return Err(ErrorBody::new(ErrorCode::Invalid, "the resolution must be a positive number"));
+    }
+    let doc_id = s.docs.get(s.plugin_doc_index(&p.doc)?).map(|st| st.doc.id).ok_or_else(|| ErrorBody::new(ErrorCode::NotFound, "no such document"))?;
+    let key = super::undo::open_group(s, plugin, doc_id).map(|(k, _)| k);
+    s.with_plugin_doc(&p.doc, |s| {
+        let mut args = json!({"width": p.width, "height": p.height, "resample": "bilinear"});
+        if let Some(map) = args.as_object_mut() {
+            if let Some(dpi) = p.dpi {
+                map.insert("resolution".into(), json!(dpi));
+            }
+            if let Some(key) = key {
+                map.insert("coalesce".into(), Value::String(key));
+            }
+        }
+        s.execute("image.imageSize", args).map(|_| ()).map_err(engine_error)
     })?;
     ok()
 }
