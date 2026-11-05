@@ -4,8 +4,8 @@
 //! [`Session::plugin_request`], which answers with a JSON result and an optional binary payload,
 //! or a typed protocol error. This module owns the document side of the process plug-in protocol
 //! (`photocraft-process-plugin-protocol`): documents, the layer tree, pixels, selections and masks,
-//! undo groups, the change events subscribed plug-ins receive, and the data plug-ins store in
-//! documents.
+//! undo groups, the change events subscribed plug-ins receive, the data plug-ins store in
+//! documents, and transient previews.
 //!
 //! Every change a plug-in makes is an ordinary [`Session::edit`], so it is one undoable history
 //! step labelled by the plug-in, or part of one when it runs inside an undo group
@@ -24,6 +24,9 @@ mod layers;
 #[cfg(test)]
 mod pixel_tests;
 mod pixels;
+mod preview;
+#[cfg(test)]
+mod preview_tests;
 mod storage;
 #[cfg(test)]
 mod storage_tests;
@@ -38,6 +41,7 @@ use photocraft_process_plugin_protocol::message::{ErrorBody, ErrorCode};
 use serde_json::Value;
 
 pub use events::PluginEvent;
+pub use preview::PreviewRow;
 
 use crate::{EngineError, Session};
 
@@ -59,6 +63,10 @@ pub struct Broker {
     /// Per document, the revision a plug-in's edit produced and the plug-in: the next change
     /// event at that revision carries it as its origin.
     origins: HashMap<DocId, (u64, String)>,
+    /// Each document's transient preview (`preview.show`).
+    previews: HashMap<DocId, preview::Preview>,
+    /// Moves whenever a preview is shown or hidden.
+    preview_generation: u64,
 }
 
 impl Session {
@@ -90,6 +98,8 @@ impl Session {
             "undo.begin" => undo::begin(self, plugin, params),
             "undo.end" => undo::end(self, plugin, params),
             "events.subscribe" => events::subscribe(self, plugin, params),
+            "preview.show" => preview::show(self, plugin, params, payload),
+            "preview.hide" => preview::hide(self, params),
             "blob.get" => storage::blob_get(self, plugin, params),
             "blob.set" => storage::blob_set(self, plugin, params, payload),
             "blob.delete" => storage::blob_delete(self, plugin, params),
@@ -101,9 +111,10 @@ impl Session {
     }
 
     /// A plug-in disconnected (stopped, crashed or removed): close the undo groups it left open,
-    /// so the next edit records a step of its own, and drop its event subscriptions.
+    /// so the next edit records a step of its own, and drop its previews and event subscriptions.
     pub fn plugin_disconnected(&mut self, plugin: &str) {
         undo::close_all(self, plugin);
+        self.drop_plugin_previews(plugin);
         self.process_plugin.subscriptions.remove(plugin);
         if self.process_plugin.subscriptions.is_empty() {
             self.process_plugin.watch = None;

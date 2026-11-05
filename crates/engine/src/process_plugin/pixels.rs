@@ -35,7 +35,7 @@ const STAGING: PixelFormat = PixelFormat::new(ColorMode::Rgb, SampleType::F32, t
 
 /// A wire rectangle as a canvas rectangle, refusing ones that don't fit the canvas coordinate
 /// range, are empty, or would need a payload past [`MAX_PAYLOAD`] in `format`.
-fn canvas_rect(r: &WireRect, format: WireFormat) -> Result<photocraft_geom::Rect, ErrorBody> {
+pub(super) fn canvas_rect(r: &WireRect, format: WireFormat) -> Result<photocraft_geom::Rect, ErrorBody> {
     if r.is_empty() {
         return Err(ErrorBody::new(ErrorCode::Invalid, "the rectangle is empty"));
     }
@@ -52,7 +52,7 @@ fn canvas_rect(r: &WireRect, format: WireFormat) -> Result<photocraft_geom::Rect
 }
 
 /// Refuse a payload whose length isn't exactly `rect` in `format`.
-fn check_payload(payload: &[u8], rect: &WireRect, format: WireFormat) -> Result<(), ErrorBody> {
+pub(super) fn check_payload(payload: &[u8], rect: &WireRect, format: WireFormat) -> Result<(), ErrorBody> {
     let expected = format.payload_len(rect.width, rect.height).unwrap_or(u64::MAX);
     if payload.len() as u64 != expected {
         return Err(ErrorBody::new(
@@ -65,7 +65,7 @@ fn check_payload(payload: &[u8], rect: &WireRect, format: WireFormat) -> Result<
 
 /// Refuse documents whose colour mode has no meaningful sRGB view: Bitmap, Indexed, Multichannel
 /// and Duotone documents would lose their structure on a write.
-fn check_mode(doc: &Document) -> Result<(), ErrorBody> {
+pub(super) fn check_mode(doc: &Document) -> Result<(), ErrorBody> {
     match doc.mode {
         ColorMode::Rgb | ColorMode::Grayscale | ColorMode::Cmyk | ColorMode::Lab => Ok(()),
         mode => Err(ErrorBody::new(ErrorCode::Unsupported, format!("{mode:?} documents can't be converted to and from RGB"))),
@@ -125,8 +125,6 @@ fn render(doc: &Document, source: &PixelSource, exclude: &[String], rect: photoc
             photocraft_compose::render_layer_in(doc, &bare(layer), rect)
         }
         PixelSource::Composite => {
-            // Transient previews (`preview.show`) are kept outside the document, so a composite
-            // never contains one unless `includePreview` puts it back.
             if exclude.is_empty() {
                 photocraft_compose::render(doc, rect)
             } else {
@@ -190,7 +188,7 @@ fn colour_format(format: WireFormat) -> Result<WireFormat, ErrorBody> {
 
 /// sRGB pixels from the payload as a surface in the document's mode and depth (`target`),
 /// covering `rect`.
-fn import(doc: &Document, payload: &[u8], format: WireFormat, rect: photocraft_geom::Rect, target: PixelFormat) -> Result<Surface, ErrorBody> {
+pub(super) fn import(doc: &Document, payload: &[u8], format: WireFormat, rect: photocraft_geom::Rect, target: PixelFormat) -> Result<Surface, ErrorBody> {
     let mut staged = Surface::new(STAGING);
     staged.write_region(rect, &decode(payload, format));
     let profile = crate::color_cmds::document_profile(doc);
@@ -206,6 +204,9 @@ pub(super) fn read(s: &mut Session, p: &Value) -> Outcome {
     let rect = canvas_rect(&p.rect, format)?;
     let doc = snapshot(s, &p.doc)?;
     check_mode(&doc)?;
+    // The plug-in's transient preview joins a composite only when asked for.
+    let shown = (p.include_preview && p.source == PixelSource::Composite).then(|| s.plugin_preview_document(&doc)).flatten();
+    let doc = shown.map(Arc::new).unwrap_or(doc);
     let mut px = render(&doc, &p.source, &p.exclude, rect)?;
     to_srgb(&doc, &mut px)?;
     Ok((Value::Object(serde_json::Map::new()), encode(&px, format)))

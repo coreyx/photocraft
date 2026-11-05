@@ -44,3 +44,27 @@ fn live_adjust_document_is_built_once_per_setting() {
     assert_eq!(k4, 0);
     assert!(std::sync::Arc::ptr_eq(&d, &app.session.documents()[0].doc), "no preview: the document itself");
 }
+
+/// A process plug-in's preview: displayed as a locked layer, built once per preview, and gone
+/// from the display when hidden.
+#[test]
+fn a_plugin_preview_is_displayed_and_memoized() {
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+    app.run("file.new", json!({"width": 64, "height": 48})).unwrap();
+    let doc = app.session.documents()[0].doc.id.0.to_string();
+    let image = vec![200u8; 8 * 8 * 4];
+    let show = json!({"doc": doc, "label": "[Preview] test", "rect": {"x": 4, "y": 4, "width": 8, "height": 8}, "format": "rgba8"});
+    app.session.plugin_request("org.example.p", "preview.show", &show, &image).unwrap();
+    let (a, key) = display_doc(&mut app, 0);
+    assert_eq!(key >> 40, 1 << 2, "the preview's display key");
+    assert_eq!(a.layers.last().map(|l| (l.name.as_str(), l.locks.all)), Some(("[Preview] test", true)));
+    let (b, _) = display_doc(&mut app, 0);
+    assert!(std::sync::Arc::ptr_eq(&a, &b), "built once");
+    app.session.plugin_request("org.example.p", "preview.show", &show, &image).unwrap();
+    let (c, _) = display_doc(&mut app, 0);
+    assert!(!std::sync::Arc::ptr_eq(&a, &c), "a new preview is built again");
+    app.session.plugin_request("org.example.p", "preview.hide", &json!({"doc": doc}), &[]).unwrap();
+    let (d, key) = display_doc(&mut app, 0);
+    assert_eq!(key, 0);
+    assert_eq!(d.layers.len(), app.session.documents()[0].doc.layers.len());
+}

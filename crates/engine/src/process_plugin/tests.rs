@@ -281,6 +281,8 @@ fn hostile_parameters_never_panic() {
         "blob.list",
         "layerData.get",
         "layerData.set",
+        "preview.show",
+        "preview.hide",
     ];
     let values = [
         Value::Null,

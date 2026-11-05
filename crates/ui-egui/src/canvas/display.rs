@@ -202,6 +202,25 @@ pub(crate) fn display_doc(app: &mut PhotocraftApp, idx: usize) -> (std::sync::Ar
     }
     let revision = st.revision;
     let snapshot = st.doc.clone();
+    // A process plug-in's transient preview, composited as a locked layer it inserts.
+    if app.session.plugin_preview_row(&snapshot).is_some() {
+        let key = (1 << 42) | (app.session.plugin_preview_generation() & ((1 << 40) - 1));
+        let cached = app
+            .display_memo
+            .get(&snapshot.id)
+            .filter(|(doc, k, _)| *k == key && doc.ptr_eq(&std::sync::Arc::downgrade(&snapshot)))
+            .map(|(_, _, shown)| shown.clone());
+        let shown = match cached {
+            Some(shown) => Some(shown),
+            None => {
+                let built = app.session.plugin_preview_document(&snapshot);
+                memo_display(app, &snapshot, key, || built)
+            }
+        };
+        if let Some(doc) = shown {
+            return (doc, key);
+        }
+    }
     if let Some((layer, params)) = app.live_adjust.clone()
         && let Some(l) = snapshot.layer(layer)
         && let LayerContent::Adjustment(a) = &l.content

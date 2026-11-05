@@ -154,8 +154,11 @@ fn doc_event(id: DocId, snap: &DocSnap) -> DocumentEvent {
 
 impl Session {
     /// The events every subscribed plug-in should get for what changed since the last call.
-    /// The shell calls this once per frame, after the frame's edits.
+    /// The shell calls this once per frame, after the frame's edits; it also drops the previews
+    /// of documents that closed or aren't the active one any more.
     pub fn plugin_events(&mut self) -> Vec<PluginEvent> {
+        // Once a frame is also when previews of documents no longer shown go.
+        self.prune_plugin_previews();
         if self.process_plugin.subscriptions.is_empty() {
             return Vec::new();
         }

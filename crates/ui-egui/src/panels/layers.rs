@@ -277,7 +277,12 @@ pub(super) fn layers(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             // The drawn rows, top to bottom (#1721): the space between them and below the last
             // one is a drop zone too.
             let mut drawn: Vec<(LayerId, Rect)> = Vec::new();
+            // A plug-in's transient preview: a row of its own above the layer it is shown over.
+            let mut preview = app.session.plugin_preview_row(&doc);
             for &(depth, l) in &rows {
+                if let Some(p) = preview.take_if(|p| p.above.is_none_or(|id| id == l.id)) {
+                    super::preview_row::preview_row(app, ui, &p.label, if p.above.is_some() { depth } else { 0 });
+                }
                 // Select › Isolate Layers.
                 if !photocraft_engine::select_extra_cmds::isolation_shows(&doc, &isolated, l.id) {
                     continue;

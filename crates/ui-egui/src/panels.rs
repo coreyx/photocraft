@@ -52,6 +52,7 @@ mod options_bar;
 pub(super) mod panel_docking;
 mod panel_state;
 pub mod preset_panels;
+mod preview_row;
 mod properties;
 pub mod props_layout;
 pub mod smart_ui;
@@ -1025,6 +1026,8 @@ mod snapshot_row_tests {
 
 #[cfg(test)]
 mod layer_pct_slider_tests;
+#[cfg(test)]
+mod preview_row_tests;
 
 #[cfg(test)]
 mod fx_drag_tests;
