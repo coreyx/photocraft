@@ -1,4 +1,5 @@
-//! Tests for the process plug-in broker: documents, layers, undo groups and hostile input.
+//! Tests for the process plug-in broker: documents, layers, undo groups and hostile input
+//! (pixel transfer has its own tests in `pixel_tests`).
 
 use photocraft_color::{ColorMode, SampleType};
 use photocraft_doc::{Document, Layer, Size};
@@ -266,6 +267,13 @@ fn hostile_parameters_never_panic() {
         "layer.thumbnail",
         "undo.begin",
         "undo.end",
+        "pixels.read",
+        "pixels.write",
+        "pixels.createLayer",
+        "selection.read",
+        "selection.bounds",
+        "selection.set",
+        "mask.read",
     ];
     let values = [
         Value::Null,
@@ -287,6 +295,9 @@ fn hostile_parameters_never_panic() {
         json!({"doc": doc, "label": "", "group": u64::MAX}),
         json!({"doc": doc, "path": "\u{0}/nothing/here.psd"}),
         json!({"doc": "-1", "uid": "-"}),
+        json!({"doc": doc, "uid": uid, "rect": {"x": i64::MIN, "y": -1, "width": u32::MAX, "height": 1}, "format": "rgba32f", "source": {"kind": "composite"}}),
+        json!({"doc": doc, "uid": uid, "rect": {"x": 0, "y": 0, "width": 1, "height": 3}, "format": "gray8", "which": "alpha", "name": "n"}),
+        json!({"doc": doc, "rect": {"x": 0, "y": 0, "width": 3, "height": 1}, "source": {"kind": "group", "uid": uid}, "exclude": ["x", uid], "format": "bgra8"}),
     ];
     for method in methods {
         for v in &values {

@@ -121,7 +121,7 @@ pub(super) fn set_active(s: &mut Session, p: &Value) -> Outcome {
     ok()
 }
 
-fn check_name(name: &str) -> Result<(), ErrorBody> {
+pub(super) fn check_name(name: &str) -> Result<(), ErrorBody> {
     if name.len() > MAX_NAME || name.contains('\0') {
         return Err(ErrorBody::new(ErrorCode::Invalid, format!("a layer name must be at most {MAX_NAME} bytes")));
     }
@@ -130,7 +130,7 @@ fn check_name(name: &str) -> Result<(), ErrorBody> {
 
 /// Insert `layer` where `placement` says: directly above `above`, else on top of `parent`'s
 /// children, else on top of the document.
-fn place(doc: &mut Document, placement: &Placement, layer: Layer) -> Result<LayerId, ErrorBody> {
+pub(super) fn place(doc: &mut Document, placement: &Placement, layer: Layer) -> Result<LayerId, ErrorBody> {
     if let Some(above) = &placement.above {
         let above = find(doc, above)?;
         if let Some(parent) = &placement.parent {

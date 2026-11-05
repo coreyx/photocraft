@@ -3,7 +3,8 @@
 //! The shell drains each plug-in's frames (`Services::process_plugins`) and hands its requests to
 //! [`Session::plugin_request`], which answers with a JSON result and an optional binary payload,
 //! or a typed protocol error. This module owns the document side of the process plug-in protocol
-//! (`photocraft-process-plugin-protocol`): documents, the layer tree and undo groups so far.
+//! (`photocraft-process-plugin-protocol`): documents, the layer tree, pixels, selections and masks,
+//! and undo groups.
 //!
 //! Every change a plug-in makes is an ordinary [`Session::edit`], so it is one undoable history
 //! step labelled by the plug-in, or part of one when it runs inside an undo group
@@ -16,6 +17,9 @@
 
 mod docs;
 mod layers;
+#[cfg(test)]
+mod pixel_tests;
+mod pixels;
 #[cfg(test)]
 mod tests;
 mod undo;
@@ -60,6 +64,13 @@ impl Session {
             "layer.delete" => layers::delete(self, plugin, params),
             "layer.addMask" => layers::add_mask(self, plugin, params, payload),
             "layer.thumbnail" => layers::thumbnail(self, params),
+            "pixels.read" => pixels::read(self, params),
+            "pixels.write" => pixels::write(self, plugin, params, payload),
+            "pixels.createLayer" => pixels::create_layer(self, plugin, params, payload),
+            "selection.read" => pixels::selection_read(self, params),
+            "selection.bounds" => pixels::selection_bounds_of(self, params),
+            "selection.set" => pixels::selection_set(self, plugin, params, payload),
+            "mask.read" => pixels::mask_read(self, params),
             "undo.begin" => undo::begin(self, plugin, params),
             "undo.end" => undo::end(self, plugin, params),
             other => Err(ErrorBody::new(ErrorCode::Unsupported, format!("PhotoCraft does not support '{other}'"))),
