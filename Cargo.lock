@@ -5363,6 +5363,7 @@ dependencies = [
 name = "photocraft-process-plugin-host"
 version = "0.20.1"
 dependencies = [
+ "flate2",
  "getrandom 0.3.4",
  "log",
  "photocraft-process-plugin-protocol",
@@ -5370,6 +5371,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml",
+ "zip",
 ]
 
 [[package]]

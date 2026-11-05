@@ -1152,3 +1152,16 @@ fn an_effect_cache_above_the_cap_loads_clamped_and_does_not_block_apply() {
         assert_eq!(s.execute("prefs.get", json!({"path": "fileHandling.recentFileCount"})).unwrap(), json!(7), "{saved} MB");
     }
 }
+
+#[test]
+fn resetting_plug_ins_keeps_the_disabled_process_plugins() {
+    let mut s = session();
+    s.execute("prefs.set", json!({"path": "plugIns.disabledProcessPlugins", "value": ["org.example.a"]})).unwrap();
+    s.execute("prefs.set", json!({"path": "plugIns.generatorEnabled", "value": true})).unwrap();
+    s.execute("prefs.reset", json!({"path": "plugIns"})).unwrap();
+    assert_eq!(s.execute("prefs.get", json!({"path": "plugIns.generatorEnabled"})).unwrap(), json!(false));
+    assert_eq!(s.execute("prefs.get", json!({"path": "plugIns.disabledProcessPlugins"})).unwrap(), json!(["org.example.a"]));
+    // Resetting the list itself, or everything, does clear it.
+    s.execute("prefs.reset", json!({"path": "plugIns.disabledProcessPlugins"})).unwrap();
+    assert_eq!(s.execute("prefs.get", json!({"path": "plugIns.disabledProcessPlugins"})).unwrap(), json!([]));
+}

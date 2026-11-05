@@ -21,6 +21,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod install;
 pub mod link;
 mod logfile;
 pub mod manifest;
@@ -35,7 +36,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 use photocraft_process_plugin_protocol::PROTOCOL_VERSION;
 use photocraft_process_plugin_protocol::frame::{Frame, Limits};
-use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, PluginStatus, ProcessPluginHost, Waker};
+use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, PluginStatus, ProcessPluginHost, StartSettings, Waker};
 use photocraft_process_plugin_protocol::method::{Theme, Welcome};
 
 pub use link::Timing;
@@ -226,10 +227,11 @@ impl Manager {
 }
 
 impl ProcessPluginHost for Manager {
-    fn start(&mut self, locale: &str, dark_theme: bool, waker: Waker) {
-        self.config.locale = locale.to_string();
-        self.config.dark_theme = dark_theme;
-        self.waker = waker;
+    fn start(&mut self, settings: StartSettings) {
+        self.config.locale = settings.locale;
+        self.config.dark_theme = settings.dark_theme;
+        self.config.disabled.extend(settings.disabled);
+        self.waker = settings.waker;
         self.start_enabled();
     }
 
@@ -297,6 +299,23 @@ impl ProcessPluginHost for Manager {
         std::fs::remove_dir_all(&slot.folder).map_err(|e| format!("could not remove {}: {e}", slot.folder.display()))
     }
 
+    fn install(&mut self, package: &str) -> Result<String, String> {
+        let plugins_dir = self.config.plugins_dir.clone();
+        let staged = install::stage(Path::new(package), &plugins_dir)?;
+        let id = staged.manifest.id.clone();
+        // The installed copy's files may be in use: stop it before replacing them.
+        self.stop(&id);
+        self.slots.remove(&id);
+        staged.place(&plugins_dir)?;
+        drop(staged);
+        let manifest = staged_manifest(&plugins_dir, &id)?;
+        self.scan();
+        if !self.config.disabled.contains(&manifest.id) {
+            self.launch_one(&manifest.id)?;
+        }
+        Ok(manifest.id)
+    }
+
     fn rescan(&mut self) {
         self.scan();
         self.start_enabled();
@@ -328,6 +347,11 @@ impl Drop for Manager {
             }
         }
     }
+}
+
+/// The manifest of a just-installed plug-in.
+fn staged_manifest(plugins_dir: &Path, id: &str) -> Result<Manifest, String> {
+    Manifest::load(&plugins_dir.join(id))
 }
 
 /// A random hex string for the launch nonce.

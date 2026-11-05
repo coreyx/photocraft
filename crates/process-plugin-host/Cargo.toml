@@ -16,6 +16,11 @@ log = { workspace = true }
 getrandom = { workspace = true }
 # Plug-in manifests (photocraft-plugin.toml). Already in Cargo.lock (ui-egui's tests).
 toml = "1"
+# Plug-in packages (.zip). Already in Cargo.lock (craft-update); only Deflate is needed.
+zip = { version = "=9.1.0", default-features = false, features = ["deflate-flate2"] }
+# Selects the workspace's Deflate backend (zlib-rs) for zip's flate2.
+flate2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+zip = { version = "=9.1.0", default-features = false, features = ["deflate-flate2"] }

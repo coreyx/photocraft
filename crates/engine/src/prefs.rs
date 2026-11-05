@@ -927,6 +927,9 @@ pub struct PlugIns {
     pub show_extension_panels: bool,
     pub allow_scripts_to_connect: bool,
     pub generator_enabled: bool,
+    /// Process plug-ins the user turned off, by plug-in id (desktop). Managed from the process
+    /// plug-in list on this page rather than as a field of its own.
+    pub disabled_process_plugins: Vec<String>,
 }
 
 impl Default for PlugIns {
@@ -937,6 +940,7 @@ impl Default for PlugIns {
             show_extension_panels: true,
             allow_scripts_to_connect: false,
             generator_enabled: false,
+            disabled_process_plugins: Vec::new(),
         }
     }
 }
@@ -1351,11 +1355,17 @@ impl Preferences {
         // The favourite fonts are the user's library, not a Type setting: resetting the Type
         // section keeps them (only `type.favoriteFonts` itself, or Reset All, clears them).
         let favorites = (path == "type").then(|| self.type_.favorite_fonts.clone());
+        // Likewise which process plug-ins are off belongs to the plug-in list: resetting the
+        // Plug-ins section keeps it (only the path itself, or Reset All, clears it).
+        let disabled_plugins = (path == "plugIns").then(|| self.plug_ins.disabled_process_plugins.clone());
         let mut root = self.to_json();
         set_path(&mut root, path, def)?;
         *self = serde_json::from_value(root).map_err(|e| e.to_string())?;
         if let Some(favorites) = favorites {
             self.type_.favorite_fonts = favorites;
+        }
+        if let Some(disabled) = disabled_plugins {
+            self.plug_ins.disabled_process_plugins = disabled;
         }
         Ok(())
     }

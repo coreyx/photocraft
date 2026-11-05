@@ -69,11 +69,23 @@ pub enum HostEvent {
 /// up to [`ProcessPluginHost::drain`] it instead of polling.
 pub type Waker = std::sync::Arc<dyn Fn() + Send + Sync>;
 
+/// What the UI hands the host when it starts the plug-ins.
+#[derive(Clone)]
+pub struct StartSettings {
+    /// The UI language, passed to plug-ins in `welcome`.
+    pub locale: String,
+    /// Whether the UI theme is dark, passed to plug-ins in `welcome`.
+    pub dark_theme: bool,
+    /// Plug-ins the user turned off (from preferences), by id.
+    pub disabled: Vec<String>,
+    /// Called whenever events arrive for the UI.
+    pub waker: Waker,
+}
+
 /// The UI's handle on its process plug-ins.
 pub trait ProcessPluginHost {
-    /// Launch the enabled plug-ins. Called once, when the UI is ready: `locale` and `dark_theme`
-    /// are what plug-ins are told in `welcome`, and `waker` is called whenever events arrive.
-    fn start(&mut self, locale: &str, dark_theme: bool, waker: Waker);
+    /// Launch the enabled plug-ins. Called once, when the UI is ready.
+    fn start(&mut self, settings: StartSettings);
 
     /// Every installed plug-in, in a stable order.
     fn statuses(&self) -> Vec<PluginStatus>;
@@ -96,6 +108,11 @@ pub trait ProcessPluginHost {
 
     /// Stop a plug-in and delete its installed folder (not its data folder).
     fn remove(&mut self, plugin: &str) -> Result<(), String>;
+
+    /// Install a plug-in package (a `.zip` with a manifest at its root or in one top-level
+    /// folder), replacing an installed copy with the same id, and start it if enabled. Returns
+    /// the plug-in id.
+    fn install(&mut self, package: &str) -> Result<String, String>;
 
     /// Look for newly installed or removed plug-ins and start the newly found enabled ones.
     fn rescan(&mut self);

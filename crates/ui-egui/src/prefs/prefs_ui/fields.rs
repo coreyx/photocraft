@@ -14,8 +14,12 @@ pub fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, f: &mut Map<String, Valu
             info.extend(gpu_memory_lines(app));
             f.insert("__gpuInfo".into(), json!(info));
             f.insert("__gpuAdapters".into(), json!(app.perf.gpu_info.adapters));
+            f.insert("__processPlugins".into(), app.process_plugin_statuses());
             let system = system_theme(app, ui.ctx());
             prefs_body(ui, f, system);
+            if let Some(action) = f.remove("__processPluginAction") {
+                app.process_plugin_action(&action, f);
+            }
         }
         "shortcuts" => shortcuts_body(app, ui, f),
         "presets" => presets_body(app, ui, f),
@@ -251,6 +255,9 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>, system: Option<egui
                     if section == "performance" {
                         gpu_status_rows(ui, f.get("__gpuInfo"), f.get("__gpuAdapters"), obj);
                     }
+                    if section == "plugIns" {
+                        crate::process_plugins::prefs_rows(ui, f);
+                    }
                     ui.add_space(8.0);
                 }
                 if search.trim().is_empty()
@@ -265,6 +272,14 @@ fn prefs_body(ui: &mut egui::Ui, f: &mut Map<String, Value>, system: Option<egui
                         && let Some(def) = def.as_object_mut()
                     {
                         def.insert("favoriteFonts".into(), favorites);
+                    }
+                    // Which process plug-ins are off is managed by the plug-in list, not a field
+                    // this button should reset: the plug-ins themselves stay as they are.
+                    if section == "plugIns"
+                        && let Some(disabled) = values.get(&section).and_then(|v| v.get("disabledProcessPlugins")).cloned()
+                        && let Some(def) = def.as_object_mut()
+                    {
+                        def.insert("disabledProcessPlugins".into(), disabled);
                     }
                     values[&section] = def;
                 }
@@ -374,7 +389,9 @@ pub(super) fn field_visible(section: &str, obj: &Map<String, Value>, k: &str, qu
         // The browser presents frames itself: Low-Latency Drawing does nothing there.
         || (cfg!(target_arch = "wasm32") && path == "performance.lowLatencyDrawing")
         || (section == "export" && !export_field_visible(obj, k))
-        || (section == "tools" && !tools_field_visible(obj, k));
+        || (section == "tools" && !tools_field_visible(obj, k))
+        // Edited through the process plug-in list on the same page.
+        || path == "plugIns.disabledProcessPlugins";
     (query.is_empty() || preference_matches(section, k, query))
         && !drawn_elsewhere
         && !prefs::is_hidden(&path)

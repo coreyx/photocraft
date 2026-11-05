@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use photocraft_process_plugin_host::{Config, Manager, Timing};
 use photocraft_process_plugin_protocol::frame::Frame;
-use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, ProcessPluginHost};
+use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, ProcessPluginHost, StartSettings};
 use photocraft_process_plugin_protocol::message::Header;
 
 const ID: &str = "org.example.echo";
@@ -44,7 +44,7 @@ fn quick() -> Timing {
 }
 
 fn start(fixture: &mut Fixture) {
-    fixture.manager.start("en", true, Arc::new(|| {}));
+    fixture.manager.start(StartSettings { locale: "en".into(), dark_theme: true, disabled: Vec::new(), waker: Arc::new(|| {}) });
 }
 
 /// Drain until `wanted` matches the plug-in's state, collecting frames on the way.
@@ -201,4 +201,90 @@ fn still_beating(path: &Path) -> bool {
     let before = std::fs::read_to_string(path).unwrap_or_default();
     std::thread::sleep(Duration::from_millis(300));
     std::fs::read_to_string(path).unwrap_or_default() != before
+}
+
+/// Build a plug-in package: the echo program and a manifest, inside `top` (or at the root).
+fn package(dir: &Path, top: Option<&str>, mode: &str, extra: &[(&str, &[u8])]) -> PathBuf {
+    use std::io::Write;
+    let path = dir.join("echo-package.zip");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated).unix_permissions(0o755);
+    let prefix = top.map(|t| format!("{t}/")).unwrap_or_default();
+    let name = echo_program().file_name().unwrap().to_string_lossy().to_string();
+    zip.start_file(format!("{prefix}bin/{name}"), opts).unwrap();
+    zip.write_all(&std::fs::read(echo_program()).unwrap()).unwrap();
+    let manifest = format!("id = \"{ID}\"\nname = \"Echo\"\nversion = \"1.0.0\"\nprotocol = 1\nlicense = \"MIT\"\ncommand = [\"bin/{name}\", \"{mode}\"]\n");
+    zip.start_file(format!("{prefix}photocraft-plugin.toml"), opts).unwrap();
+    zip.write_all(manifest.as_bytes()).unwrap();
+    for (entry, bytes) in extra {
+        zip.start_file(*entry, opts).unwrap();
+        zip.write_all(bytes).unwrap();
+    }
+    zip.finish().unwrap();
+    path
+}
+
+fn empty_manager(dir: &Path) -> Manager {
+    let mut config = Config::new(dir.join("plugins"), dir.join("data"), dir.join("logs"), "test", "en");
+    config.timing = quick();
+    let mut manager = Manager::new(config);
+    manager.start(StartSettings { locale: "en".into(), dark_theme: true, disabled: Vec::new(), waker: Arc::new(|| {}) });
+    manager
+}
+
+#[test]
+fn a_package_installs_starts_and_can_be_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = empty_manager(dir.path());
+    let pkg = package(dir.path(), Some("echo-1.0.0"), "conformance", &[]);
+    assert_eq!(manager.install(pkg.to_str().unwrap()).unwrap(), ID);
+    assert!(dir.path().join("plugins").join(ID).join("photocraft-plugin.toml").is_file());
+    assert_eq!(wait_state(&mut manager, Duration::from_secs(5), |s| *s == PluginState::Running).0, PluginState::Running);
+
+    // Installing again replaces the running copy and starts the new one.
+    let pkg = package(dir.path(), None, "conformance", &[]);
+    assert_eq!(manager.install(pkg.to_str().unwrap()).unwrap(), ID);
+    assert_eq!(manager.statuses().len(), 1);
+    assert_eq!(wait_state(&mut manager, Duration::from_secs(5), |s| *s == PluginState::Running).0, PluginState::Running);
+    // No staging folder is left behind.
+    let leftovers: Vec<_> =
+        std::fs::read_dir(dir.path().join("plugins")).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with('.')).collect();
+    assert!(leftovers.is_empty());
+    manager.shutdown();
+}
+
+#[test]
+fn packages_cannot_escape_the_plugin_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = empty_manager(dir.path());
+    let pkg = package(dir.path(), None, "conformance", &[("../escaped.txt", b"x")]);
+    let err = manager.install(pkg.to_str().unwrap()).unwrap_err();
+    assert!(err.contains("outside"), "{err}");
+    assert!(!dir.path().join("escaped.txt").exists());
+    assert!(manager.statuses().is_empty());
+}
+
+#[test]
+fn a_package_without_a_manifest_is_refused() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = empty_manager(dir.path());
+    let path = dir.path().join("nothing.zip");
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    zip.start_file("readme.txt", zip::write::SimpleFileOptions::default()).unwrap();
+    zip.write_all(b"hello").unwrap();
+    zip.finish().unwrap();
+    assert!(manager.install(path.to_str().unwrap()).unwrap_err().contains("photocraft-plugin.toml"));
+    let not_zip = dir.path().join("not.zip");
+    std::fs::write(&not_zip, b"plain text").unwrap();
+    assert!(manager.install(not_zip.to_str().unwrap()).unwrap_err().contains(".zip"));
+}
+
+#[test]
+fn plugins_disabled_in_preferences_stay_stopped() {
+    let mut f = fixture("conformance", quick());
+    f.manager.start(StartSettings { locale: "en".into(), dark_theme: true, disabled: vec![ID.to_string()], waker: Arc::new(|| {}) });
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(f.manager.statuses()[0].state, PluginState::Disabled);
+    assert!(!f.manager.statuses()[0].enabled);
 }

@@ -12,6 +12,8 @@
 //! `--hardware-filtering` respects texture samplers; the default predictable renderer forces bilinear filtering.
 //! `--wayland-notice` previews the native file drag-and-drop guidance shown in Wayland sessions.
 //! `--update-notice` previews a newer release without contacting the network.
+//! `--process-plugins-demo` lists sample process plug-ins (Preferences › Plug-ins) without
+//! launching any.
 //! `--custom-titlebar` draws the Windows/Linux title bar (caption buttons in the top bar).
 //!
 //! `--monitor 1366x768 --window-top 31` simulates the display the window is on (in points) and
@@ -42,6 +44,7 @@ fn main() {
     let scale: f32 = arg(&args, "--scale").and_then(|s| s.parse().ok()).unwrap_or(2.0);
     let wayland_notice = args.iter().any(|a| a == "--wayland-notice");
     let update_notice = args.iter().any(|a| a == "--update-notice");
+    let process_plugins_demo = args.iter().any(|a| a == "--process-plugins-demo");
     let script: Vec<(String, Value)> =
         arg(&args, "--script").map(|s| serde_json::from_str::<Vec<(String, Value)>>(&s).expect("--script must be [[method, params], …]")).unwrap_or_default();
 
@@ -86,6 +89,9 @@ fn main() {
             let mut services = services;
             services.is_wayland = wayland_notice;
             services.xwayland_command = wayland_notice.then(|| "WAYLAND_DISPLAY= photocraft".into());
+            if process_plugins_demo {
+                services.process_plugins = Some(Box::new(DemoPlugins));
+            }
             let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
             if update_notice {
                 app.session.updates.status = photocraft_engine::updates_cmds::Status::Available {
@@ -195,4 +201,63 @@ fn main() {
     let img = harness.render().expect("render");
     img.save(&out).expect("save png");
     println!("wrote {out} ({}×{})", img.width(), img.height());
+}
+
+/// Sample process plug-ins for `--process-plugins-demo`: fixed statuses, nothing launched.
+struct DemoPlugins;
+
+impl photocraft_process_plugin_protocol::host::ProcessPluginHost for DemoPlugins {
+    fn start(&mut self, _settings: photocraft_process_plugin_protocol::host::StartSettings) {}
+
+    fn statuses(&self) -> Vec<photocraft_process_plugin_protocol::host::PluginStatus> {
+        use photocraft_process_plugin_protocol::host::{PluginState, PluginStatus};
+        let status = |id: &str, name: &str, enabled: bool, state: PluginState| PluginStatus {
+            id: id.into(),
+            name: name.into(),
+            version: "1.2.0".into(),
+            license: "MIT".into(),
+            description: "Sample plug-in".into(),
+            folder: String::new(),
+            enabled,
+            state,
+        };
+        vec![
+            status("org.example.running", "Running Sample", true, PluginState::Running),
+            status("org.example.off", "Turned-Off Sample", false, PluginState::Disabled),
+            status("org.example.crashed", "Crashed Sample", true, PluginState::Crashed { reason: "the plug-in exited with code 7".into() }),
+            status("org.example.future", "Future Sample", true, PluginState::Incompatible { reason: "needs protocol 2, PhotoCraft speaks 1".into() }),
+        ]
+    }
+
+    fn drain(&mut self) -> Vec<photocraft_process_plugin_protocol::host::HostEvent> {
+        Vec::new()
+    }
+
+    fn send(&mut self, _plugin: &str, _frame: photocraft_process_plugin_protocol::frame::Frame) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn next_request_id(&mut self) -> u64 {
+        1
+    }
+
+    fn restart(&mut self, _plugin: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn set_enabled(&mut self, _plugin: &str, _enabled: bool) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn remove(&mut self, _plugin: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn install(&mut self, _package: &str) -> Result<String, String> {
+        Err("the demo can't install plug-ins".into())
+    }
+
+    fn rescan(&mut self) {}
+
+    fn shutdown(&mut self) {}
 }

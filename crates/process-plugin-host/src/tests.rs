@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use photocraft_process_plugin_protocol::PROTOCOL_VERSION;
 use photocraft_process_plugin_protocol::frame::{self, Frame, Limits};
-use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, ProcessPluginHost};
+use photocraft_process_plugin_protocol::host::{HostEvent, PluginState, ProcessPluginHost, StartSettings};
 use photocraft_process_plugin_protocol::message::{ErrorCode, Header};
 use photocraft_process_plugin_protocol::method::{self, HelloParams, Method, PluginIdentity, Theme, Welcome};
 
@@ -136,13 +136,14 @@ fn starting_wakes_the_ui_for_every_event() {
     let mut manager = Manager::new(cfg);
     let wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counter = wakes.clone();
-    manager.start(
-        "ja",
-        false,
-        Arc::new(move || {
+    manager.start(StartSettings {
+        locale: "ja".into(),
+        dark_theme: false,
+        disabled: Vec::new(),
+        waker: Arc::new(move || {
             counter.fetch_add(1, Ordering::SeqCst);
         }),
-    );
+    });
     // The missing program becomes a crash event, and the UI was woken for it.
     assert!(wakes.load(Ordering::SeqCst) >= 1);
     assert_eq!(manager.drain().len(), 1);
