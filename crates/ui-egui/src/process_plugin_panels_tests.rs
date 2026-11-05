@@ -89,7 +89,7 @@ fn window_item(app: &PhotocraftApp, id: &str) -> Option<crate::menus::MenuItem> 
 #[test]
 fn a_registered_panel_is_docked_drawn_and_sends_input() {
     let (mut app, sent) = app();
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     let mut h = Harness::builder().with_size(vec2(1440.0, 1000.0)).with_max_steps(64).build_eframe(move |cc| {
         PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
         app
@@ -107,15 +107,15 @@ fn a_registered_panel_is_docked_drawn_and_sends_input() {
 #[test]
 fn the_window_menu_lists_closes_and_reopens_plugin_panels() {
     let (mut app, _) = app();
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     let id = dock_id(P, "main");
     let item = window_item(&app, &id).expect("a Window menu item");
-    assert_eq!((item.label.as_str(), item.checked), ("AI Image", Some(true)));
+    assert_eq!((item.label.as_str(), item.checked), ("Sample Panel", Some(true)));
     app.run(&format!("window.panel.{id}"), json!({"show": false})).unwrap();
     assert!(!layout(&app).contains(&id), "closed");
     assert_eq!(window_item(&app, &id).and_then(|i| i.checked), Some(false));
     // A plug-in registering it again (after a restart) doesn't bring back what the user closed.
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     crate::panel_docking::place_new_plugin_panels_for_tests(&mut app);
     assert!(!layout(&app).contains(&id));
     app.run(&format!("window.panel.{id}"), json!({})).unwrap();
@@ -125,7 +125,7 @@ fn the_window_menu_lists_closes_and_reopens_plugin_panels() {
 #[test]
 fn plugin_panels_float_dock_and_tab_like_built_in_ones() {
     let (mut app, _) = app();
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     let id = dock_id(P, "main");
     app.run("window.panel.float", json!({"panel": id})).unwrap();
     assert!(layout(&app).floating.iter().any(|w| w.contains(&id)));
@@ -134,7 +134,7 @@ fn plugin_panels_float_dock_and_tab_like_built_in_ones() {
     app.run("window.panel.move", json!({"panel": id, "anchor": "layers"})).unwrap();
     assert!(crate::panel_docking::probe::group_of(&app, &id).contains(&"layers".to_string()), "tabbed with Layers");
     // A second panel of a rearranged workspace joins the plug-in panel's group.
-    register(&mut app, "history", "AI History").unwrap();
+    register(&mut app, "history", "Sample History").unwrap();
     crate::panel_docking::place_new_plugin_panels_for_tests(&mut app);
     assert!(crate::panel_docking::probe::group_of(&app, &dock_id(P, "history")).contains(&id));
     // And the arrangement is saved with the workspace.
@@ -146,16 +146,16 @@ fn plugin_panels_float_dock_and_tab_like_built_in_ones() {
 #[test]
 fn a_stopped_plugins_panels_keep_their_place_until_it_comes_back() {
     let (mut app, _) = app();
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     let id = dock_id(P, "main");
     app.run("window.panel.move", json!({"panel": id, "anchor": "layers"})).unwrap();
     let arranged = layout(&app);
     app.process_plugin_state_change_for_tests(P, PluginState::Crashed { reason: "x".into() });
     assert_eq!(layout(&app), arranged, "the panel stays where the user put it");
     assert!(!app.process_plugin_ui.panels.registered.contains_key(&id));
-    assert_eq!(app.plugin_panel_label(&id), "AI Image", "its tab keeps its name");
+    assert_eq!(app.plugin_panel_label(&id), "Sample Panel", "its tab keeps its name");
     app.process_plugin_state_change_for_tests(P, PluginState::Running);
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     crate::panel_docking::place_new_plugin_panels_for_tests(&mut app);
     assert_eq!(layout(&app), arranged, "the restarted plug-in's panel is in the same place, once");
 }
@@ -163,7 +163,7 @@ fn a_stopped_plugins_panels_keep_their_place_until_it_comes_back() {
 #[test]
 fn input_waits_for_a_plugin_that_is_not_responding() {
     let (mut app, sent) = app();
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     app.process_plugin_state_change_for_tests(P, PluginState::NotResponding);
     for i in 0..(MAX_QUEUED + 10) {
         app.send_panel_input_for_tests(P, i);
@@ -181,7 +181,7 @@ fn bad_registrations_and_patches_are_refused() {
     let (mut app, _) = app();
     assert_eq!(register(&mut app, "has space", "T"), Err(ErrorCode::Invalid));
     assert_eq!(register(&mut app, "main", "  "), Err(ErrorCode::Invalid));
-    register(&mut app, "main", "AI Image").unwrap();
+    register(&mut app, "main", "Sample Panel").unwrap();
     let patch =
         |app: &mut PhotocraftApp, ops: Value| app.serve_plugin_panel(P, "panel.patch", &json!({"panelId": "main", "ops": ops})).unwrap().map_err(|e| e.code);
     let good = json!({"op": "set", "id": "go", "props": {"text": "Queue"}});

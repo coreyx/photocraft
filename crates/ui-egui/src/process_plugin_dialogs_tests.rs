@@ -62,7 +62,7 @@ fn harness(app: PhotocraftApp) -> Harness<'static, PhotocraftApp> {
 #[test]
 fn a_dialog_draws_its_tree_and_sends_input_and_its_closing() {
     let (mut app, sent, _) = app();
-    let open = json!({"dialogId": "settings", "title": "AI Settings", "modal": false, "tree": gallery()});
+    let open = json!({"dialogId": "settings", "title": "Sample Settings", "modal": false, "tree": gallery()});
     assert!(matches!(request(&mut app, 1, "dialog.open", open), Some(Header::Response { id: 1, .. })));
     let mut h = harness(app);
     h.get_by_label("Generate").click();

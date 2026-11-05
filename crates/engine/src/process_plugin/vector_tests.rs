@@ -1,6 +1,5 @@
-//! Tests for vector (pose) content: an 18-joint, 17-bone OpenPose skeleton built the way Krita AI
-//! Diffusion draws one, rendered, dragged with the Move tool's command, duplicated, edited and
-//! saved.
+//! Tests for vector (pose) content: an 18-joint, 17-bone pose skeleton drawn as circles and lines,
+//! rendered, dragged with the Move tool's command, duplicated, edited and saved.
 
 use photocraft_color::{ColorMode, SampleType};
 use photocraft_doc::{Document, Layer, Size};
@@ -14,8 +13,8 @@ const P: &str = "org.example.test";
 const W: u32 = 300;
 const H: u32 = 420;
 
-/// Krita AI Diffusion's default pose (`pose.py`): joints, the joint pairs of each bone, and the
-/// colour of each joint and bone.
+/// A standing figure: joints, the joint pairs of each bone, and the colour of each joint and
+/// bone, as pose editors commonly draw them.
 const JOINTS: [(f64, f64); 18] = [
     (153.0, 107.0),
     (152.0, 146.0),

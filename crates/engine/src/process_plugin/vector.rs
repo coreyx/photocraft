@@ -1,11 +1,11 @@
-//! `vector.*`: editable vector content (OpenPose skeletons) as a group of shape layers.
+//! `vector.*`: editable vector content (pose skeletons) as a group of shape layers.
 //!
 //! PhotoCraft has no multi-shape vector layer, so a plug-in's vector content is a group marked
 //! as such in its layer data, holding one shape layer per SVG `<circle>` or `<line>`. The user
 //! moves joints with the Move and Path Selection tools and copies them with Duplicate Layer, all
 //! existing tools; the change events report it. Each shape keeps its SVG element id in its layer
-//! data, so a duplicate carries the same id (the plug-in treats a repeated id as a new element,
-//! as Krita AI Diffusion does). Every element also has a distinct handle, its layer uid.
+//! data, so a duplicate carries the same id (a plug-in can read a repeated id as a new
+//! element). Every element also has a distinct handle, its layer uid.
 //!
 //! Geometry is read back from the shapes' paths: a closed path is a circle (its centre and
 //! radius from the path's bounds), an open one a line (its first and last anchors).

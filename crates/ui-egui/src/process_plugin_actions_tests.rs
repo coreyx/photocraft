@@ -30,11 +30,11 @@ fn register(app: &mut PhotocraftApp, params: Value) -> Result<Value, ErrorCode> 
     app.serve_plugin_action(P, "action.register", &params).unwrap().map_err(|e| e.code)
 }
 
-/// The fifteen actions Krita AI Diffusion registers, give or take: one with a default key, a
+/// Fifteen actions, as a plug-in with a full panel might register: one with a default key, a
 /// few in a submenu.
 fn register_fifteen(app: &mut PhotocraftApp) {
     for i in 0..15 {
-        let mut p = json!({"id": format!("action_{i}"), "label": format!("AI Action {i}")});
+        let mut p = json!({"id": format!("action_{i}"), "label": format!("Sample Action {i}")});
         if i == 0 {
             p["shortcut"] = json!("Cmd+Alt+Shift+F11");
         }

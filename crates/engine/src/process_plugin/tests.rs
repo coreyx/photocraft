@@ -327,3 +327,37 @@ fn hostile_parameters_never_panic() {
         }
     }
 }
+
+/// `doc.open` reads a file into a new active document; a missing, unreadable or nameless path
+/// is a typed error.
+#[test]
+fn documents_open_from_a_path() {
+    let (mut s, _) = session();
+    let dir = std::env::temp_dir().join(format!("pcpp-open-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("opened.png");
+    let st = &s.documents()[0];
+    let bytes = photocraft_io::export(&st.doc, "opened.png", &photocraft_io::ExportOptions::default()).unwrap().bytes;
+    std::fs::write(&file, bytes).unwrap();
+    let opened = call(&mut s, "doc.open", json!({"path": file.to_string_lossy()})).unwrap();
+    let id = opened["doc"].as_str().unwrap().to_string();
+    assert_eq!(s.active().map(|st| st.doc.id.0.to_string()), Some(id));
+    assert_eq!(s.active().map(|st| (st.doc.size.width, st.doc.size.height)), Some((64, 48)));
+    let junk = dir.join("junk.png");
+    std::fs::write(&junk, b"not a png").unwrap();
+    assert_eq!(call(&mut s, "doc.open", json!({"path": junk.to_string_lossy()})), Err(ErrorCode::Invalid));
+    assert_eq!(call(&mut s, "doc.open", json!({"path": dir.join("missing.png").to_string_lossy()})), Err(ErrorCode::NotFound));
+    assert_eq!(call(&mut s, "doc.open", json!({"path": ""})), Err(ErrorCode::Invalid));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `doc.resizeCanvas` refuses empty and absurd sizes before touching the document.
+#[test]
+fn canvas_sizes_are_checked() {
+    let (mut s, doc) = session();
+    for (w, h) in [(0, 10), (10, 0), (u32::MAX, 10)] {
+        assert_eq!(call(&mut s, "doc.resizeCanvas", json!({"doc": doc, "width": w, "height": h})), Err(ErrorCode::Invalid), "{w}x{h}");
+    }
+    assert_eq!(call(&mut s, "doc.resizeCanvas", json!({"doc": "424242", "width": 8, "height": 8})), Err(ErrorCode::NotFound));
+    assert_eq!(s.documents()[0].doc.size.width, 64);
+}

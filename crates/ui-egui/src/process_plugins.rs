@@ -583,6 +583,36 @@ mod pump_tests {
     }
 
     #[test]
+    fn services_refuse_what_they_cannot_do() {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let host = FakeHost { inbox: Vec::new(), sent: sent.clone(), started: Arc::new(Mutex::new(None)), running: Vec::new() };
+        // No platform services at all, as in the web build.
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Services { process_plugins: Some(Box::new(host)), ..Default::default() });
+        let ctx = egui::Context::default();
+        let ask = |app: &mut PhotocraftApp, method: &str, params: serde_json::Value| {
+            app.serve_plugin_service(&ctx, "org.example.p", method, &params, &[]).unwrap().map_err(|e| e.code)
+        };
+        let folder = std::env::temp_dir().to_string_lossy().into_owned();
+        assert_eq!(ask(&mut app, "clipboard.get", json!({})), Err(ErrorCode::Unsupported));
+        assert_eq!(ask(&mut app, "open.path", json!({"path": folder})), Err(ErrorCode::Unsupported));
+        assert!(ask(&mut app, "clipboard.set", json!({"text": "kept by egui"})).is_ok(), "set falls back to egui");
+        assert_eq!(ask(&mut app, "clipboard.set", json!({"text": "x".repeat((16 << 20) + 1)})), Err(ErrorCode::TooLarge));
+        assert_eq!(ask(&mut app, "progress.set", json!({"taskId": "", "message": "m"})), Err(ErrorCode::Invalid));
+        assert_eq!(ask(&mut app, "notice.show", json!({"level": "loud", "text": "x"})), Err(ErrorCode::Invalid));
+        for i in 0..16 {
+            ask(&mut app, "progress.set", json!({"taskId": format!("t{i}"), "message": "m"})).unwrap();
+        }
+        assert_eq!(ask(&mut app, "progress.set", json!({"taskId": "one-more", "message": "m"})), Err(ErrorCode::TooLarge));
+        // Updating a task keeps a Cancel already clicked.
+        app.cancel_plugin_task("org.example.p", "t0");
+        ask(&mut app, "progress.set", json!({"taskId": "t0", "fraction": 0.5, "message": "half", "cancellable": true})).unwrap();
+        let t0 = app.process_plugin_progress.iter().find(|t| t.task_id == "t0").cloned().unwrap();
+        assert_eq!((t0.fraction, t0.cancellable, t0.message.as_str()), (Some(0.5), false, "half"));
+        assert_eq!(ask(&mut app, "image.put", json!({"hash": "bad hash", "encoding": "png"})), Err(ErrorCode::Invalid));
+        assert!(app.serve_plugin_service(&ctx, "org.example.p", "doc.list", &json!({}), &[]).is_none(), "document requests go to the broker");
+    }
+
+    #[test]
     fn progress_is_cleared_by_the_plugin() {
         let (mut app, _, _) = app_with(vec![
             request(1, "progress.set", json!({"taskId": "a", "message": "Downloading"})),

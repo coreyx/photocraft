@@ -38,7 +38,7 @@ impl Rect {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PixelFormat {
-    /// 8-bit blue, green, red, alpha (straight alpha), the order Krita's API and Qt's ARGB32 use.
+    /// 8-bit blue, green, red, alpha (straight alpha), the order Qt's ARGB32 and Windows' DIBs use.
     Bgra8,
     /// 8-bit red, green, blue, alpha (straight alpha).
     Rgba8,

@@ -599,7 +599,7 @@ pub struct PickedPath {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterActionParams {
-    /// Unique within the plug-in, e.g. `"ai_diffusion_generate"`.
+    /// Unique within the plug-in, e.g. `"generate"`.
     pub id: String,
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

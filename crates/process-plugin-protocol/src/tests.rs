@@ -195,7 +195,7 @@ fn patches_have_the_documented_wire_shape() {
 
 #[test]
 fn input_events_default_their_modifiers() {
-    let value = json!({"owner": "ai", "nodeId": "go", "kind": "click", "value": 1});
+    let value = json!({"owner": "main", "nodeId": "go", "kind": "click", "value": 1});
     let input: InputEvent = serde_json::from_value(value).unwrap();
     assert_eq!(input.kind, InputKind::Click);
     assert_eq!(input.modifiers, Modifiers::default());
