@@ -274,11 +274,13 @@ plug-in stops. One preview per document; a newer one replaces it.
 | `panel.patch` | `{panelId, ops: [patch]}` | `{}` (all the patches or none) |
 | `panel.unregister` | `{panelId}` | `{}` |
 | `image.put` | `{hash, encoding: "png"|"svg"}` + bytes | `{}` |
-| `dialog.open` | `{dialogId, title, modal, tree}` | `{}` |
+| `dialog.open` | `{dialogId, title, modal, tree, width?, height?, minWidth?, minHeight?}` | `{}` |
 | `dialog.patch` | `{dialogId, ops}` | `{}` |
 | `dialog.close` | `{dialogId}` | `{}` |
 | `dialog.message` | `{kind: "information"|"question"|"warning"|"critical", title, text, buttons}` | `{button?}`, once the user has chosen |
 | `dialog.file` | `{mode: "open"|"save"|"folder", title?, filters?: [{name, extensions}], start?}` | `{path?}`, once the user has chosen |
+
+A dialog's `width` and `height` are its initial size in points and `minWidth` and `minHeight` its minimum, as the plug-in's toolkit sized it. PhotoCraft keeps the dialog within its window. Without them, or with 0, a dialog opens at PhotoCraft's default size and has no minimum.
 
 A panel is a dock panel like the built-in ones: it moves, tabs, floats and closes, has a Window
 menu entry, and is saved with the workspace. A tree is a node `{id, kind, props, children}`; ids are
