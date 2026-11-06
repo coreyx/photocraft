@@ -30,6 +30,26 @@ pub struct Dialog {
     pub id: String,
     pub title: String,
     pub modal: bool,
+    /// The initial size the plug-in gave (`dialog.open` `width`/`height`), in points.
+    pub size: Option<(u32, u32)>,
+    /// The minimum size the plug-in gave (`minWidth`/`minHeight`), in points.
+    pub min_size: Option<(u32, u32)>,
+}
+
+/// A dialog's size when the plug-in gives none.
+const DEFAULT_DIALOG_SIZE: egui::Vec2 = vec2(420.0, 320.0);
+/// Room kept between a dialog the plug-in sized and the edges of PhotoCraft's window.
+const DIALOG_MARGIN: f32 = 48.0;
+
+impl Dialog {
+    /// The size to open at and the minimum size, in points, kept within `area` (PhotoCraft's
+    /// window less a margin): the plug-in's own when it gave them, else the default and none.
+    fn sizes(&self, area: egui::Vec2) -> (egui::Vec2, Option<egui::Vec2>) {
+        let fit = |(w, h): (u32, u32)| vec2((w as f32).min(area.x), (h as f32).min(area.y));
+        let min = self.min_size.map(fit);
+        let size = self.size.map(fit).unwrap_or(DEFAULT_DIALOG_SIZE.min(area));
+        (min.map_or(size, |m| size.max(m)), min)
+    }
 }
 
 /// A message box waiting for the user, and the request it answers.
@@ -98,9 +118,10 @@ impl PhotocraftApp {
         if !reopened && open.iter().filter(|d| d.plugin == plugin).count() >= MAX_DIALOGS {
             return Err(ErrorBody::new(ErrorCode::TooLarge, format!("at most {MAX_DIALOGS} dialogs per plug-in")));
         }
+        let (size, min_size) = (p.size(), p.min_size());
         let tree = Tree::new(p.tree).map_err(|e| ErrorBody::new(ErrorCode::Invalid, e))?;
         self.process_plugin_ui.trees.insert(tree_owner(plugin, &p.dialog_id), tree);
-        let dialog = Dialog { plugin: plugin.to_string(), id: p.dialog_id, title: p.title.chars().take(120).collect(), modal: p.modal };
+        let dialog = Dialog { plugin: plugin.to_string(), id: p.dialog_id, title: p.title.chars().take(120).collect(), modal: p.modal, size, min_size };
         let open = &mut self.process_plugin_ui.dialogs.open;
         match open.iter_mut().find(|d| d.plugin == plugin && d.id == dialog.id) {
             Some(existing) => *existing = dialog,
@@ -201,6 +222,8 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let ui_state = &mut app.process_plugin_ui;
         let Some(tree) = ui_state.trees.get_mut(&owner) else { continue };
         let images = &mut ui_state.images;
+        let area = (ctx.content_rect().size() - vec2(DIALOG_MARGIN, DIALOG_MARGIN)).max(vec2(320.0, 200.0));
+        let (size, min_size) = dialog.sizes(area);
         let mut draw = |ui: &mut egui::Ui| {
             ui.set_min_width(320.0);
             events = crate::process_plugin_ui::render::show(ui, &dialog.plugin, &dialog.id, tree, images);
@@ -209,6 +232,10 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
             let modal = egui::Modal::new(egui::Id::unique(("plugin-dialog", &dialog.plugin, &dialog.id))).show(ctx, |ui| {
                 ui.heading(&dialog.title);
                 ui.add_space(6.0);
+                if dialog.size.is_some() {
+                    ui.set_min_size(size);
+                    ui.set_max_size(size);
+                }
                 draw(ui);
             });
             if modal.should_close() {
@@ -220,7 +247,9 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 .open(&mut open)
                 .resizable(true)
                 .collapsible(false)
-                .default_size(vec2(420.0, 320.0))
+                .default_size(size)
+                .min_size(min_size.unwrap_or(vec2(0.0, 0.0)))
+                .max_size(area)
                 .show(ctx, |ui| draw(ui));
         }
         for event in events {
