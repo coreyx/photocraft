@@ -209,3 +209,25 @@ fn typed_results_decode() {
     assert!(welcome.theme.dark);
     assert_eq!(crate::PROTOCOL_VERSION, 1);
 }
+
+#[test]
+fn dialogs_may_give_their_size() {
+    let plain = json!({"dialogId": "d", "title": "T", "modal": false, "tree": {"id": "root", "kind": "column"}});
+    let params: method::OpenDialogParams = serde_json::from_value(plain.clone()).unwrap();
+    assert_eq!((params.size(), params.min_size()), (None, None));
+    assert_eq!(serde_json::to_value(&params).unwrap(), plain, "absent sizes stay absent on the wire");
+
+    let mut sized = plain;
+    sized["width"] = json!(1000);
+    sized["height"] = json!(600);
+    sized["minWidth"] = json!(960);
+    sized["minHeight"] = json!(480);
+    let params: method::OpenDialogParams = serde_json::from_value(sized.clone()).unwrap();
+    assert_eq!((params.size(), params.min_size()), (Some((1000, 600)), Some((960, 480))));
+    assert_eq!(serde_json::to_value(&params).unwrap(), sized);
+
+    sized["height"] = json!(0);
+    sized.as_object_mut().unwrap().remove("minHeight");
+    let params: method::OpenDialogParams = serde_json::from_value(sized).unwrap();
+    assert_eq!((params.size(), params.min_size()), (None, None), "0 or one side alone counts as not given");
+}

@@ -525,6 +525,39 @@ pub struct OpenDialogParams {
     #[serde(default)]
     pub modal: bool,
     pub tree: Node,
+    /// The dialog's initial width in points, as the plug-in's toolkit sized it. Absent or 0:
+    /// the host's default. The host keeps the dialog within its window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    /// The dialog's initial height in points; see [`Self::width`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    /// The width the dialog can't be made narrower than. Absent or 0: no minimum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_width: Option<u32>,
+    /// The height the dialog can't be made shorter than; see [`Self::min_width`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_height: Option<u32>,
+}
+
+impl OpenDialogParams {
+    /// The initial size the plug-in asked for, when it gave both sides (0 counts as not given).
+    pub fn size(&self) -> Option<(u32, u32)> {
+        both(self.width, self.height)
+    }
+
+    /// The minimum size the plug-in asked for, when it gave both sides (0 counts as not given).
+    pub fn min_size(&self) -> Option<(u32, u32)> {
+        both(self.min_width, self.min_height)
+    }
+}
+
+/// Both sides of a size, each given and non-zero.
+fn both(width: Option<u32>, height: Option<u32>) -> Option<(u32, u32)> {
+    match (width, height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => Some((w, h)),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
