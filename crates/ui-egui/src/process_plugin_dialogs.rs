@@ -250,6 +250,9 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
                 .default_size(size)
                 .min_size(min_size.unwrap_or(vec2(0.0, 0.0)))
                 .max_size(area)
+                // A dialog the plug-in sized keeps that size and scrolls what doesn't fit, as a
+                // Qt dialog's scroll areas do; growing to fit its content, it would outgrow it.
+                .vscroll(dialog.size.is_some())
                 .show(ctx, |ui| draw(ui));
         }
         for event in events {
