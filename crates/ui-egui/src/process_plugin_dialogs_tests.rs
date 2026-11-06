@@ -158,3 +158,146 @@ fn a_stopped_plugins_dialogs_go() {
     app.process_plugin_state_change_for_tests(P, photocraft_process_plugin_protocol::host::PluginState::Stopped);
     assert!(app.process_plugin_ui.dialogs.open.is_empty() && app.process_plugin_ui.dialogs.messages.is_empty());
 }
+
+// -- layout: stretch and sizes (spec plugin-dialog-layout-fix)
+
+/// A synthetic node.
+fn n(id: &str, kind: &str, props: Value, children: Vec<Value>) -> Value {
+    json!({"id": id, "kind": kind, "props": props, "children": children})
+}
+
+fn button(id: &str, text: &str) -> Value {
+    n(id, "button", json!({"text": text}), vec![])
+}
+
+fn label(id: &str, text: &str) -> Value {
+    n(id, "label", json!({"text": text}), vec![])
+}
+
+fn grow_spacer(id: &str) -> Value {
+    n(id, "spacer", json!({"grow": 1}), vec![])
+}
+
+/// A harness the size of a desktop window with `tree` opened as a dialog of `size`, after
+/// `steps` frames.
+fn sized_dialog(tree: Value, size: Option<(u32, u32)>, min: Option<(u32, u32)>, steps: usize) -> Harness<'static, PhotocraftApp> {
+    let (mut app, _, _) = app();
+    let mut open = json!({"dialogId": "layout", "title": "Layout", "modal": false, "tree": tree});
+    if let Some((w, h)) = size {
+        open["width"] = json!(w);
+        open["height"] = json!(h);
+    }
+    if let Some((w, h)) = min {
+        open["minWidth"] = json!(w);
+        open["minHeight"] = json!(h);
+    }
+    request(&mut app, 1, "dialog.open", open).unwrap();
+    let mut h = Harness::builder().with_size(vec2(1440.0, 900.0)).build_ui_state(
+        |ui, app: &mut PhotocraftApp| {
+            if !ui.ctx().fonts(|f| f.families().contains(&egui::FontFamily::Name("medium".into()))) {
+                return;
+            }
+            crate::process_plugin_dialogs::show(app, ui.ctx());
+        },
+        app,
+    );
+    PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+    h.run_steps(steps);
+    h
+}
+
+/// The dialog window's rectangle: the one area that isn't the whole screen.
+fn dialog_rect(h: &Harness<'static, PhotocraftApp>) -> egui::Rect {
+    let screen = h.ctx.content_rect();
+    h.ctx.memory(|m| m.layer_ids().filter_map(|l| m.area_rect(l.id)).find(|r| *r != screen)).expect("a dialog window")
+}
+
+fn rect_of(h: &Harness<'static, PhotocraftApp>, label: &str) -> egui::Rect {
+    h.get_by_label(label).rect()
+}
+
+#[test]
+fn items_after_a_grow_spacer_go_to_the_right_edge() {
+    let row = n("row", "row", json!({}), vec![button("l", "Left"), grow_spacer("s"), button("r", "Right")]);
+    let h = sized_dialog(row, Some((600, 300)), None, 6);
+    let window = dialog_rect(&h);
+    let (left, right) = (rect_of(&h, "Left"), rect_of(&h, "Right"));
+    assert!(left.left() < window.left() + 60.0, "Left at the left: {left:?} in {window:?}");
+    assert!(right.right() <= window.right() && right.right() > window.right() - 60.0, "Right at the right edge: {right:?} in {window:?}");
+}
+
+#[test]
+fn items_between_two_grow_spacers_are_centred() {
+    let row = n("row", "row", json!({}), vec![button("a", "A"), grow_spacer("s1"), label("m", "Middle"), grow_spacer("s2"), button("b", "B")]);
+    let h = sized_dialog(row, Some((600, 300)), None, 6);
+    let (window, middle) = (dialog_rect(&h), rect_of(&h, "Middle"));
+    assert!((middle.center().x - window.center().x).abs() < 40.0, "centred: {middle:?} in {window:?}");
+}
+
+#[test]
+fn a_growing_line_edit_leaves_room_for_the_button_after_it() {
+    let field = n("url", "lineEdit", json!({"text": "127.0.0.1:8188", "grow": 1}), vec![]);
+    let row = n("row", "row", json!({}), vec![field, button("c", "Connect")]);
+    let h = sized_dialog(row, Some((600, 300)), None, 6);
+    let (window, connect) = (dialog_rect(&h), rect_of(&h, "Connect"));
+    assert!(connect.right() <= window.right(), "Connect inside: {connect:?} in {window:?}");
+    assert!(connect.left() > window.left() + 300.0, "the field took the rest: {connect:?}");
+}
+
+#[test]
+fn a_grow_spacer_in_a_scroll_area_adds_no_height() {
+    let scroll = n("scroll", "scroll", json!({}), vec![n("col", "column", json!({}), vec![grow_spacer("s"), label("b", "Below")])]);
+    let h = sized_dialog(n("root", "column", json!({}), vec![scroll]), Some((600, 300)), None, 6);
+    let (window, below) = (dialog_rect(&h), rect_of(&h, "Below"));
+    // At most the visible height (Qt's stretch fills a scroll area's viewport), never the
+    // 10,000 points the spacer used to add.
+    assert!(below.top() < window.bottom(), "Below starts in view: {below:?} in {window:?}");
+}
+
+#[test]
+fn a_dialog_opens_at_its_size_and_minimum() {
+    let content = n("root", "column", json!({}), vec![label("t", "Text")]);
+    let h = sized_dialog(content.clone(), Some((700, 400)), None, 10);
+    let size = dialog_rect(&h).size();
+    assert!((size.x - 700.0).abs() < 1.0 && (size.y - 400.0).abs() < 1.0, "700×400: {size:?}");
+    let h = sized_dialog(content.clone(), Some((300, 200)), Some((500, 350)), 10);
+    let size = dialog_rect(&h).size();
+    assert!(size.x >= 499.0 && size.y >= 349.0, "at least the minimum: {size:?}");
+    let h = sized_dialog(content, None, None, 10);
+    assert!(dialog_rect(&h).width() < 500.0, "without a size, the default");
+}
+
+#[test]
+fn a_settings_page_keeps_its_size_and_shows_its_controls() {
+    // The shape of Krita AI Diffusion's Connection page as the mirror sends it.
+    let list = n("pages", "list", json!({"items": [{"id": "c", "text": "Connection"}, {"id": "s", "text": "Styles"}], "selected": ["c"]}), vec![]);
+    let krita = n("krita", "row", json!({}), vec![label("k", "Detected setup"), grow_spacer("ks"), button("d", "Detect")]);
+    let url = n("url-row", "row", json!({}), vec![n("url", "lineEdit", json!({"text": "127.0.0.1:8188", "grow": 1}), vec![]), button("c", "Connect")]);
+    let server = n("server", "column", json!({}), vec![label("u", "Server URL"), url, label("st", "Connected")]);
+    let content = n(
+        "content",
+        "column",
+        json!({}),
+        vec![krita, label("long", "A configuration found on this computer"), n("panels", "stack", json!({"grow": 1}), vec![server])],
+    );
+    let page = n("page", "column", json!({}), vec![label("h", "Server Configuration"), n("scroll", "scroll", json!({"grow": 1}), vec![content])]);
+    let bottom = n(
+        "bottom",
+        "row",
+        json!({}),
+        vec![button("rd", "Restore Defaults"), grow_spacer("b1"), label("v", "Version 1.0"), grow_spacer("b2"), button("ok", "Ok")],
+    );
+    let column = n("main", "column", json!({"grow": 1}), vec![n("stack", "stack", json!({"grow": 1}), vec![page]), bottom]);
+    let mut h = sized_dialog(n("root", "row", json!({}), vec![list, column]), Some((960, 480)), Some((960, 480)), 5);
+    let first = dialog_rect(&h);
+    h.run_steps(20);
+    let window = dialog_rect(&h);
+    assert_eq!(first, window, "the dialog keeps its size");
+    assert!((window.width() - 960.0).abs() < 1.0 && (window.height() - 480.0).abs() < 1.0, "960×480: {window:?}");
+    for name in ["Server URL", "Connect", "Connected"] {
+        let r = rect_of(&h, name);
+        assert!(window.contains_rect(r), "{name} visible: {r:?} in {window:?}");
+    }
+    let ok = rect_of(&h, "Ok");
+    assert!(ok.right() <= window.right() && ok.left() > window.center().x, "Ok at the right: {ok:?} in {window:?}");
+}
