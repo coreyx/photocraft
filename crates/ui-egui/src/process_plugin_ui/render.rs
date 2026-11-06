@@ -131,7 +131,7 @@ fn children(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) {
 fn widget(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     use WidgetKind as K;
     match n.kind {
-        K::Row => ui.horizontal(|ui| children(ui, n, cx)).response,
+        K::Row => row(ui, n, cx),
         K::Column => ui.vertical(|ui| children(ui, n, cx)).response,
         K::Grid => grid(ui, n, cx),
         K::Form => form(ui, n, cx),
@@ -232,6 +232,55 @@ fn widget(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
         K::Repeater => ui.vertical(|ui| children(ui, n, cx)).response,
         K::Popup | K::Menu => ui.allocate_response(vec2(0.0, 0.0), Sense::hover()),
     }
+}
+
+fn is_grow_spacer(n: &Node) -> bool {
+    n.kind == WidgetKind::Spacer && num(n, "grow", 0.0) > 0.0
+}
+
+/// A row. Its `grow` spacers share the space the other items leave, as Qt's stretch does: the
+/// items before the first one go from the left, those after the last one from the right edge,
+/// and those between them are centred in what's left. A spacer that took the available width
+/// itself would push everything after it past the edge of a window that sizes to its content.
+/// A row without `grow` spacers is laid out left to right.
+fn row(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
+    let shown: Vec<&Node> = n.children.iter().filter(|c| flag(c, "visible", true)).collect();
+    let (Some(first), Some(last)) = (shown.iter().position(|c| is_grow_spacer(c)), shown.iter().rposition(|c| is_grow_spacer(c))) else {
+        return ui.horizontal(|ui| children(ui, n, cx)).response;
+    };
+    let not_grow = |c: &&&Node| !is_grow_spacer(c);
+    ui.horizontal(|ui| {
+        for child in shown[..first].iter().filter(not_grow) {
+            node(ui, child, cx);
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            for child in shown[last + 1..].iter().rev().filter(not_grow) {
+                node(ui, child, cx);
+            }
+            if first == last {
+                return;
+            }
+            // egui places as it goes, so the items between the spacers are centred on the width
+            // they took last frame (a repaint follows when it changes).
+            let rest = ui.available_rect_before_wrap();
+            let key = ui.make_persistent_id(("plugin-row-middle", &n.id));
+            let width: f32 = ui.data(|d| d.get_temp(key)).unwrap_or(0.0);
+            let middle = egui::UiBuilder::new().max_rect(rest).layout(Layout::left_to_right(Align::Center));
+            ui.scope_builder(middle, |ui| {
+                ui.add_space(((rest.width() - width) / 2.0).max(0.0));
+                let start = ui.cursor().min.x;
+                for child in shown[first + 1..last].iter().filter(not_grow) {
+                    node(ui, child, cx);
+                }
+                let used = (ui.min_rect().right() - start).max(0.0);
+                if (used - width).abs() > 0.5 {
+                    ui.data_mut(|d| d.insert_temp(key, used));
+                    ui.ctx().request_repaint();
+                }
+            });
+        });
+    })
+    .response
 }
 
 /// [`egui::scroll_area::ScrollAreaOutput`] has no response; give the caller one for its rect.
