@@ -94,7 +94,7 @@ fn harness(root: Node) -> Harness<'static, State> {
             if !ui.ctx().fonts(|f| f.families().contains(&egui::FontFamily::Name("medium".into()))) {
                 return;
             }
-            let events = super::render::show(ui, P, "panel", &mut s.tree, &mut s.images);
+            let events = super::render::show(ui, P, "panel", &mut s.tree, &mut s.images, false);
             s.events.extend(events);
         },
         state,

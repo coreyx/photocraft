@@ -27,10 +27,14 @@ struct Cx<'a> {
     anchors: std::collections::HashSet<String>,
     rects: HashMap<String, Rect>,
     events: Vec<InputEvent>,
+    /// The tree is drawn in a scroll area that grows with it (a sized dialog's), so the height
+    /// below is unbounded although egui reports the visible part as available.
+    scrolled: bool,
 }
 
 /// Draw `tree` (belonging to `plugin`'s panel or dialog `owner`) and return what the user did.
-pub fn show(ui: &mut Ui, plugin: &str, owner: &str, tree: &mut Tree, images: &mut ImageCache) -> Vec<InputEvent> {
+/// `scrolled` says the caller scrolls the whole tree, as a sized dialog does.
+pub fn show(ui: &mut Ui, plugin: &str, owner: &str, tree: &mut Tree, images: &mut ImageCache, scrolled: bool) -> Vec<InputEvent> {
     let Tree { root, local } = tree;
     let mut menus = HashMap::new();
     let mut popups = Vec::new();
@@ -46,7 +50,7 @@ pub fn show(ui: &mut Ui, plugin: &str, owner: &str, tree: &mut Tree, images: &mu
         stack.extend(n.children.iter());
     }
     let anchors = popups.iter().map(|p| text(p, "anchor").to_string()).collect();
-    let mut cx = Cx { plugin, owner, images, local, menus, anchors, rects: HashMap::new(), events: Vec::new() };
+    let mut cx = Cx { plugin, owner, images, local, menus, anchors, rects: HashMap::new(), events: Vec::new(), scrolled };
     node(ui, root, &mut cx);
     for popup in popups {
         show_popup(ui, popup, &mut cx);
@@ -147,7 +151,7 @@ fn widget(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
             })
             .response
         }
-        K::Scroll if bounded_height(ui).is_none() => {
+        K::Scroll if bounded_height(ui, cx).is_none() => {
             // Inside another scroll area (a dialog's), the outer one scrolls: a nested one would
             // shrink to egui's minimum scrolled height, a few lines.
             ui.vertical(|ui| children(ui, n, cx)).response
@@ -171,7 +175,7 @@ fn widget(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
                 (true, true) => ui.available_width(),
                 // In a scroll area the height is unbounded: a spacer there takes none, rather
                 // than adding a screen's worth of empty content to scroll through.
-                (true, false) => bounded_height(ui).unwrap_or(0.0),
+                (true, false) => bounded_height(ui, cx).unwrap_or(0.0),
             };
             ui.allocate_response(if horizontal { vec2(space.max(0.0), 1.0) } else { vec2(1.0, space.max(0.0)) }, Sense::hover())
         }
@@ -255,8 +259,10 @@ fn is_grow_spacer(n: &Node) -> bool {
 
 /// The height available below, when it is bounded: not inside a scroll area, where it is
 /// unlimited, and not a window's first frame, which measures its content with room to spare.
-fn bounded_height(ui: &Ui) -> Option<f32> {
-    if ui.is_sizing_pass() {
+/// A sized dialog's scroll area reports its visible height as available; filling that would
+/// push whatever follows (a dialog's Ok) just out of view, so it counts as unbounded.
+fn bounded_height(ui: &Ui, cx: &Cx<'_>) -> Option<f32> {
+    if ui.is_sizing_pass() || cx.scrolled {
         return None;
     }
     let height = ui.available_height();

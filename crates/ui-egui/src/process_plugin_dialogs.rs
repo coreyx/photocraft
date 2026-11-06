@@ -226,7 +226,7 @@ pub fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
         let (size, min_size) = dialog.sizes(area);
         let mut draw = |ui: &mut egui::Ui| {
             ui.set_min_width(320.0);
-            events = crate::process_plugin_ui::render::show(ui, &dialog.plugin, &dialog.id, tree, images);
+            events = crate::process_plugin_ui::render::show(ui, &dialog.plugin, &dialog.id, tree, images, dialog.size.is_some());
         };
         if dialog.modal {
             let modal = egui::Modal::new(egui::Id::unique(("plugin-dialog", &dialog.plugin, &dialog.id))).show(ctx, |ui| {

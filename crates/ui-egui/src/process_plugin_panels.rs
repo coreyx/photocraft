@@ -218,7 +218,7 @@ pub(crate) fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: &str) {
     let events = egui::ScrollArea::vertical()
         .id_salt(("plugin-panel", id))
         .auto_shrink([false, false])
-        .show(ui, |ui| crate::process_plugin_ui::render::show(ui, &info.owner.plugin, &info.owner.id, tree, &mut ui_state.images))
+        .show(ui, |ui| crate::process_plugin_ui::render::show(ui, &info.owner.plugin, &info.owner.id, tree, &mut ui_state.images, false))
         .inner;
     if !responding {
         // Greyed over, with what is happening: the input still reaches the plug-in later.

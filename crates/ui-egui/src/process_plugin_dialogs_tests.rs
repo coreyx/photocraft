@@ -273,7 +273,8 @@ fn a_settings_page_keeps_its_size_and_shows_its_controls() {
     let list = n("pages", "list", json!({"items": [{"id": "c", "text": "Connection"}, {"id": "s", "text": "Styles"}], "selected": ["c"]}), vec![]);
     let krita = n("krita", "row", json!({}), vec![label("k", "Detected setup"), grow_spacer("ks"), button("d", "Detect")]);
     let url = n("url-row", "row", json!({}), vec![n("url", "lineEdit", json!({"text": "127.0.0.1:8188", "grow": 1}), vec![]), button("c", "Connect")]);
-    let server = n("server", "column", json!({}), vec![label("u", "Server URL"), url, label("st", "Connected")]);
+    // The server panel ends with a stretch, as upstream's does, which must not push the bottom row out.
+    let server = n("server", "column", json!({}), vec![label("u", "Server URL"), url, label("st", "Connected"), grow_spacer("ss")]);
     let content = n(
         "content",
         "column",
@@ -299,5 +300,6 @@ fn a_settings_page_keeps_its_size_and_shows_its_controls() {
         assert!(window.contains_rect(r), "{name} visible: {r:?} in {window:?}");
     }
     let ok = rect_of(&h, "Ok");
-    assert!(ok.right() <= window.right() && ok.left() > window.center().x, "Ok at the right: {ok:?} in {window:?}");
+    assert!(window.contains_rect(ok) && ok.left() > window.center().x, "Ok visible, at the right: {ok:?} in {window:?}");
+    assert!(window.contains_rect(rect_of(&h, "Restore Defaults")), "Restore Defaults visible");
 }

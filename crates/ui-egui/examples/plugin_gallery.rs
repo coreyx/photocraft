@@ -57,7 +57,7 @@ fn main() {
                     for (i, tree) in pages.iter_mut().enumerate() {
                         ui.allocate_ui(egui::vec2(330.0, 750.0), |ui| {
                             ui.set_width(330.0);
-                            ui.push_id(i, |ui| render::show(ui, "gallery", &format!("page-{i}"), tree, images));
+                            ui.push_id(i, |ui| render::show(ui, "gallery", &format!("page-{i}"), tree, images, false));
                         });
                     }
                 });
