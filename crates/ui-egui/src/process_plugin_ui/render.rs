@@ -147,6 +147,11 @@ fn widget(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
             })
             .response
         }
+        K::Scroll if bounded_height(ui).is_none() => {
+            // Inside another scroll area (a dialog's), the outer one scrolls: a nested one would
+            // shrink to egui's minimum scrolled height, a few lines.
+            ui.vertical(|ui| children(ui, n, cx)).response
+        }
         K::Scroll => {
             let max = num(n, "maxHeight", f64::INFINITY) as f32;
             egui::ScrollArea::vertical()
@@ -161,7 +166,13 @@ fn widget(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
             let size = num(n, "size", 8.0) as f32;
             let grow = num(n, "grow", 0.0) > 0.0;
             let horizontal = ui.layout().main_dir().is_horizontal();
-            let space = if grow { if horizontal { ui.available_width() } else { ui.available_height().min(1e4) } } else { size };
+            let space = match (grow, horizontal) {
+                (false, _) => size,
+                (true, true) => ui.available_width(),
+                // In a scroll area the height is unbounded: a spacer there takes none, rather
+                // than adding a screen's worth of empty content to scroll through.
+                (true, false) => bounded_height(ui).unwrap_or(0.0),
+            };
             ui.allocate_response(if horizontal { vec2(space.max(0.0), 1.0) } else { vec2(1.0, space.max(0.0)) }, Sense::hover())
         }
         K::Label => label(ui, n, cx),
@@ -234,46 +245,77 @@ fn widget(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     }
 }
 
-fn is_grow_spacer(n: &Node) -> bool {
-    n.kind == WidgetKind::Spacer && num(n, "grow", 0.0) > 0.0
+fn grows(n: &Node) -> bool {
+    num(n, "grow", 0.0) > 0.0
 }
 
-/// A row. Its `grow` spacers share the space the other items leave, as Qt's stretch does: the
-/// items before the first one go from the left, those after the last one from the right edge,
-/// and those between them are centred in what's left. A spacer that took the available width
-/// itself would push everything after it past the edge of a window that sizes to its content.
-/// A row without `grow` spacers is laid out left to right.
+fn is_grow_spacer(n: &Node) -> bool {
+    n.kind == WidgetKind::Spacer && grows(n)
+}
+
+/// The height available below, when it is bounded: not inside a scroll area, where it is
+/// unlimited, and not a window's first frame, which measures its content with room to spare.
+fn bounded_height(ui: &Ui) -> Option<f32> {
+    if ui.is_sizing_pass() {
+        return None;
+    }
+    let height = ui.available_height();
+    (height.is_finite() && height <= ui.ctx().content_rect().height()).then_some(height)
+}
+
+/// A row. Its `grow` children share the width the others leave, as Qt's stretch and expanding
+/// widgets do: the items before the first one go from the left, those after the last one from
+/// the right edge, and what's left goes to the growing widgets between them (a line edit, say),
+/// in equal parts. `grow` spacers take none of it; between two of them, with no growing widget,
+/// the items are centred. A child that took the available width itself would push everything
+/// after it past the edge of a window that sizes to its content. A row without `grow` children
+/// is laid out left to right.
 fn row(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     let shown: Vec<&Node> = n.children.iter().filter(|c| flag(c, "visible", true)).collect();
-    let (Some(first), Some(last)) = (shown.iter().position(|c| is_grow_spacer(c)), shown.iter().rposition(|c| is_grow_spacer(c))) else {
+    let (Some(first), Some(last)) = (shown.iter().position(|c| grows(c)), shown.iter().rposition(|c| grows(c))) else {
         return ui.horizontal(|ui| children(ui, n, cx)).response;
     };
-    let not_grow = |c: &&&Node| !is_grow_spacer(c);
+    // A growing child may be as tall as the row's space allows (a column of a dialog's page,
+    // say); a horizontal layout would give it one line's height.
+    let height = ui.available_height();
     ui.horizontal(|ui| {
-        for child in shown[..first].iter().filter(not_grow) {
+        for child in &shown[..first] {
             node(ui, child, cx);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            for child in shown[last + 1..].iter().rev().filter(not_grow) {
+            for child in shown[last + 1..].iter().rev() {
                 node(ui, child, cx);
             }
-            if first == last {
+            let middle: Vec<&Node> = shown[first..=last].iter().copied().filter(|c| !is_grow_spacer(c)).collect();
+            if middle.is_empty() {
                 return;
             }
-            // egui places as it goes, so the items between the spacers are centred on the width
-            // they took last frame (a repaint follows when it changes).
+            // egui places as it goes, so the leftover width is shared out on what the middle's
+            // fixed items took last frame (a repaint follows when it changes).
             let rest = ui.available_rect_before_wrap();
             let key = ui.make_persistent_id(("plugin-row-middle", &n.id));
-            let width: f32 = ui.data(|d| d.get_temp(key)).unwrap_or(0.0);
-            let middle = egui::UiBuilder::new().max_rect(rest).layout(Layout::left_to_right(Align::Center));
-            ui.scope_builder(middle, |ui| {
-                ui.add_space(((rest.width() - width) / 2.0).max(0.0));
-                let start = ui.cursor().min.x;
-                for child in shown[first + 1..last].iter().filter(not_grow) {
-                    node(ui, child, cx);
+            let fixed: f32 = ui.data(|d| d.get_temp(key)).unwrap_or(0.0);
+            let growing = middle.iter().filter(|c| grows(c)).count();
+            let layout = Layout::left_to_right(Align::Center);
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rest).layout(layout), |ui| {
+                let share = if growing == 0 { 0.0 } else { ((rest.width() - fixed) / growing as f32).max(40.0) };
+                if growing == 0 {
+                    ui.add_space(((rest.width() - fixed) / 2.0).max(0.0));
                 }
-                let used = (ui.min_rect().right() - start).max(0.0);
-                if (used - width).abs() > 0.5 {
+                let start = ui.cursor().min.x;
+                let mut grown = 0.0;
+                for child in &middle {
+                    if grows(child) {
+                        let cell = Rect::from_min_size(ui.cursor().min, vec2(share, height.max(rest.height())));
+                        let cell_layout = Layout::top_down(Align::Min);
+                        let r = ui.scope_builder(egui::UiBuilder::new().max_rect(cell).layout(cell_layout), |ui| node(ui, child, cx));
+                        grown += r.response.rect.width();
+                    } else {
+                        node(ui, child, cx);
+                    }
+                }
+                let used = ((ui.min_rect().right() - start) - grown).max(0.0);
+                if (used - fixed).abs() > 0.5 {
                     ui.data_mut(|d| d.insert_temp(key, used));
                     ui.ctx().request_repaint();
                 }
