@@ -303,3 +303,17 @@ fn a_settings_page_keeps_its_size_and_shows_its_controls() {
     assert!(window.contains_rect(ok) && ok.left() > window.center().x, "Ok visible, at the right: {ok:?} in {window:?}");
     assert!(window.contains_rect(rect_of(&h, "Restore Defaults")), "Restore Defaults visible");
 }
+
+#[test]
+fn a_slider_after_a_stretch_leaves_the_growing_label_room() {
+    // The Diffusion page's setting row: an expanding description, a stretch, then a slider with
+    // its number box. egui's slider takes all the width it's offered.
+    let text = "Selection Feather. The border is expanded and blurred by a fraction of selection size";
+    let description = n("d", "label", json!({"text": text, "wrap": true, "grow": 1}), vec![]);
+    let slider = n("s", "sliderSpin", json!({"min": 0, "max": 25, "value": 10, "suffix": "%"}), vec![]);
+    let row = n("row", "row", json!({}), vec![description, grow_spacer("st"), slider]);
+    let mut h = sized_dialog(n("root", "column", json!({}), vec![row]), Some((960, 480)), None, 5);
+    h.run_steps(20);
+    let (window, label) = (dialog_rect(&h), rect_of(&h, text));
+    assert!(label.width() > 250.0, "the description keeps a readable width: {label:?} in {window:?}");
+}

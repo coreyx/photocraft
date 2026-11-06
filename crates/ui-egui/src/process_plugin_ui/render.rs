@@ -284,13 +284,18 @@ fn row(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     // A growing child may be as tall as the row's space allows (a column of a dialog's page,
     // say); a horizontal layout would give it one line's height.
     let height = ui.available_height();
+    // Qt gives a fixed item its size hint, but some egui widgets (a slider) take all the width
+    // offered: with growing widgets in the row, a fixed item gets at most an equal share, so it
+    // can't leave them nothing.
+    let growing_widgets = shown.iter().filter(|c| grows(c) && !is_grow_spacer(c)).count();
+    let cap = (growing_widgets > 0).then(|| ui.available_width() / (growing_widgets + 1) as f32);
     ui.horizontal(|ui| {
         for child in &shown[..first] {
-            node(ui, child, cx);
+            fixed_item(ui, child, cx, cap);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             for child in shown[last + 1..].iter().rev() {
-                node(ui, child, cx);
+                fixed_item(ui, child, cx, cap);
             }
             let middle: Vec<&Node> = shown[first..=last].iter().copied().filter(|c| !is_grow_spacer(c)).collect();
             if middle.is_empty() {
@@ -317,7 +322,7 @@ fn row(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
                         let r = ui.scope_builder(egui::UiBuilder::new().max_rect(cell).layout(cell_layout), |ui| node(ui, child, cx));
                         grown += r.response.rect.width();
                     } else {
-                        node(ui, child, cx);
+                        fixed_item(ui, child, cx, cap);
                     }
                 }
                 let used = ((ui.min_rect().right() - start) - grown).max(0.0);
@@ -329,6 +334,20 @@ fn row(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
         });
     })
     .response
+}
+
+/// A row's non-growing child, at most `cap` wide when there is one; it takes only the width it
+/// uses, on whichever side the layout places it.
+fn fixed_item(ui: &mut Ui, child: &Node, cx: &mut Cx<'_>, cap: Option<f32>) {
+    match cap {
+        Some(width) => {
+            let size = vec2(width, ui.available_height());
+            ui.allocate_ui(size, |ui| node(ui, child, cx));
+        }
+        None => {
+            node(ui, child, cx);
+        }
+    }
 }
 
 /// [`egui::scroll_area::ScrollAreaOutput`] has no response; give the caller one for its rect.
