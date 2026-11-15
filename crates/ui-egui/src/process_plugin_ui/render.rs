@@ -278,6 +278,11 @@ fn bounded_height(ui: &Ui, cx: &Cx<'_>) -> Option<f32> {
 /// is laid out left to right.
 fn row(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     let shown: Vec<&Node> = n.children.iter().filter(|c| flag(c, "visible", true)).collect();
+    // A slider takes all the width it's offered: in a row where nothing grows, it grows, so the
+    // items after it keep their size instead of being pushed past the edge (as Qt gives a
+    // stretchable widget the row's spare width).
+    let sliders_grow = !shown.iter().any(|c| grows(c));
+    let grows = |c: &Node| grows(c) || (sliders_grow && matches!(c.kind, WidgetKind::Slider | WidgetKind::SliderSpin));
     let (Some(first), Some(last)) = (shown.iter().position(|c| grows(c)), shown.iter().rposition(|c| grows(c))) else {
         return ui.horizontal(|ui| children(ui, n, cx)).response;
     };
