@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use photocraft_process_plugin_protocol::event::{self, InputEvent};
+use photocraft_process_plugin_protocol::event::{self, InputEvent, PanelResized};
 use photocraft_process_plugin_protocol::frame::Frame;
 use photocraft_process_plugin_protocol::host::PluginState;
 use photocraft_process_plugin_protocol::message::{ErrorBody, ErrorCode, Header, decode_value};
@@ -54,6 +54,8 @@ pub struct Panels {
     pub(crate) states: HashMap<String, PluginState>,
     /// Input waiting for plug-ins that aren't responding.
     pub(crate) queued: HashMap<String, VecDeque<InputEvent>>,
+    /// The content size last sent to each panel's plug-in (`panel.resized`), by dock id.
+    pub(crate) sizes: HashMap<String, (f32, f32)>,
 }
 
 /// The dock id of `plugin`'s panel `panel`.
@@ -109,6 +111,8 @@ impl PhotocraftApp {
         self.process_plugin_ui.trees.insert(owner.clone(), tree);
         let panels = &mut self.process_plugin_ui.panels;
         panels.titles.insert(id.clone(), title.clone());
+        // A plug-in registering again (after a restart) hasn't been told the size yet.
+        panels.sizes.remove(&id);
         if panels.registered.insert(id.clone(), PanelInfo { owner, title }).is_none() {
             panels.fresh.push(id);
         }
@@ -132,6 +136,7 @@ impl PhotocraftApp {
         let p: PanelRef = params("panel.unregister", p)?;
         let id = dock_id(plugin, &p.panel_id);
         self.process_plugin_ui.panels.registered.remove(&id);
+        self.process_plugin_ui.panels.sizes.remove(&id);
         self.process_plugin_ui.trees.remove(&Owner { plugin: plugin.to_string(), id: p.panel_id });
         // An unregistered panel leaves the dock; a stopped plug-in's panels keep their place.
         if let Some(workspace) = self.ui.docking.as_ref()
@@ -184,6 +189,28 @@ impl PhotocraftApp {
         }
     }
 
+    /// Tell `owner`'s plug-in its panel's content size when it differs from the last one sent.
+    /// A plug-in laying out with its own toolkit lays the panel out at this width, so what it
+    /// draws as images (a fixed-width button) fits instead of running past the panel's edge.
+    fn send_panel_size(&mut self, id: &str, owner: &Owner, size: (f32, f32)) {
+        if !size.0.is_finite() || !size.1.is_finite() {
+            return;
+        }
+        let sizes = &mut self.process_plugin_ui.panels.sizes;
+        if sizes.get(id).is_some_and(|last| (last.0 - size.0).abs() < 0.5 && (last.1 - size.1).abs() < 0.5) {
+            return;
+        }
+        sizes.insert(id.to_string(), size);
+        let resized = PanelResized { panel_id: owner.id.clone(), width: size.0, height: size.1 };
+        let sent = Header::event(event::PANEL_RESIZED, &resized).map_err(|e| e.message).and_then(|header| match self.services.process_plugins.as_mut() {
+            Some(host) => host.send(&owner.plugin, Frame::new(header)),
+            None => Ok(()),
+        });
+        if let Err(e) = sent {
+            log::debug!("plug-in '{}': {e}", owner.plugin);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn send_panel_input_for_tests(&mut self, plugin: &str, value: usize) {
         let event = InputEvent {
@@ -215,10 +242,13 @@ pub(crate) fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: &str) {
     let responding = app.plugin_responding(&info.owner.plugin);
     let ui_state = &mut app.process_plugin_ui;
     let Some(tree) = ui_state.trees.get_mut(&info.owner) else { return };
-    let events = egui::ScrollArea::vertical()
+    let height = ui.available_height();
+    let (width, events) = egui::ScrollArea::vertical()
         .id_salt(("plugin-panel", id))
         .auto_shrink([false, false])
-        .show(ui, |ui| crate::process_plugin_ui::render::show(ui, &info.owner.plugin, &info.owner.id, tree, &mut ui_state.images, false))
+        .show(ui, |ui| {
+            (ui.available_width(), crate::process_plugin_ui::render::show(ui, &info.owner.plugin, &info.owner.id, tree, &mut ui_state.images, false))
+        })
         .inner;
     if !responding {
         // Greyed over, with what is happening: the input still reaches the plug-in later.
@@ -229,6 +259,9 @@ pub(crate) fn body(app: &mut PhotocraftApp, ui: &mut egui::Ui, id: &str) {
     }
     for event in events {
         app.send_panel_input(&info.owner.plugin, event);
+    }
+    if responding {
+        app.send_panel_size(id, &info.owner, (width, height));
     }
 }
 
