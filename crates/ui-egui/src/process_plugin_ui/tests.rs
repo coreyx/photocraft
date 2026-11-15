@@ -209,6 +209,31 @@ fn hidden_and_disabled_widgets_send_nothing() {
     assert!(h.state().events.is_empty());
 }
 
+/// A context menu the user dismissed by clicking elsewhere leaves a local `open: false`. When the
+/// plug-in removes that popup and later opens a menu under the same id, the new one shows.
+#[test]
+fn a_removed_popup_leaves_no_local_state() {
+    let popup = || {
+        Node::new("go.menu", WidgetKind::Popup)
+            .prop("anchor", "go")
+            .prop("open", true)
+            .child(Node::new("go.menu.0", WidgetKind::Button).prop("text", "Copy Prompt"))
+    };
+    let root = Node::new("root", WidgetKind::Column).child(Node::new("go", WidgetKind::Button).prop("text", "History")).child(popup());
+    let mut h = harness(root);
+    assert!(h.query_by_label("Copy Prompt").is_some(), "open at first");
+
+    h.state_mut().tree.local.insert(("go.menu".into(), "open"), json!(false));
+    h.run_steps(2);
+    assert!(h.query_by_label("Copy Prompt").is_none(), "dismissed");
+
+    h.state_mut().tree.apply(Patch::Remove { id: "go.menu".into() }).unwrap();
+    h.state_mut().tree.apply(Patch::Insert { parent: "root".into(), index: 1, node: popup() }).unwrap();
+    h.run_steps(2);
+    assert!(!h.state().tree.local.contains_key(&("go.menu".to_string(), "open")));
+    assert!(h.query_by_label("Copy Prompt").is_some(), "the reopened menu shows");
+}
+
 #[test]
 fn patches_change_the_tree_and_bad_ones_change_nothing() {
     let mut tree = Tree::new(gallery()).unwrap();
