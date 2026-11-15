@@ -217,10 +217,18 @@ These events reach the plug-in they concern without a subscription:
 | Topic | Data |
 |---|---|
 | `panel.input`, `dialog.input` | `{owner, nodeId, kind, value, modifiers: {shift, ctrl, alt, meta}}` |
+| `panel.resized` | `{panelId, width, height}` |
 | `dialog.closed` | `{dialogId}` |
 | `action.triggered` | `{id, doc?}` |
 | `progress.cancel` | `{taskId}` |
 | `locale.changed` | `{locale}` |
+
+`panel.resized` gives a panel's content size in points: the width inside its scroll area and the
+height in view. PhotoCraft sends it when it first draws the panel, whenever either changes by half
+a point or more, and again after the plug-in registers the panel anew. A plug-in that isn't
+responding is sent the current size once it responds. A plug-in laying out with its own toolkit
+should lay its panel out at this width: widgets it sends as images keep their width in
+PhotoCraft, so an image drawn for a wider layout runs past the panel's edge.
 
 ## Data kept in documents
 
