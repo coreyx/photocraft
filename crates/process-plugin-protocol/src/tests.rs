@@ -147,6 +147,13 @@ fn every_method_name_is_unique_and_dotted() {
 }
 
 #[test]
+fn panel_resized_is_camel_case() {
+    let e = event::PanelResized { panel_id: "main".into(), width: 280.0, height: 512.5 };
+    assert_eq!(serde_json::to_value(e).unwrap(), serde_json::json!({"panelId": "main", "width": 280.0, "height": 512.5}));
+    assert!(event::ALL.contains(&event::PANEL_RESIZED));
+}
+
+#[test]
 fn every_event_topic_is_unique() {
     let mut topics = event::ALL.to_vec();
     topics.sort_unstable();

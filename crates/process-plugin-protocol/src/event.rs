@@ -1,9 +1,10 @@
 //! Events the host sends to plug-ins.
 //!
 //! Document events go only to plug-ins subscribed to their topic (`events.subscribe`); UI events
-//! (`panel.input`, `dialog.*`, `action.triggered`, `progress.cancel`) always go to the plug-in
-//! that owns the panel, dialog, action or task. The host coalesces document events, so a burst
-//! of changes (a brush stroke) produces at most one event per topic per display frame.
+//! (`panel.input`, `panel.resized`, `dialog.*`, `action.triggered`, `progress.cancel`) always go
+//! to the plug-in that owns the panel, dialog, action or task. The host coalesces document
+//! events, so a burst of changes (a brush stroke) produces at most one event per topic per
+//! display frame.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,6 +21,7 @@ pub const PIXELS_CHANGED: &str = "pixels.changed";
 pub const SELECTION_CHANGED: &str = "selection.changed";
 pub const LAYER_ACTIVATED: &str = "layer.activated";
 pub const PANEL_INPUT: &str = "panel.input";
+pub const PANEL_RESIZED: &str = "panel.resized";
 pub const DIALOG_INPUT: &str = "dialog.input";
 pub const DIALOG_CLOSED: &str = "dialog.closed";
 pub const ACTION_TRIGGERED: &str = "action.triggered";
@@ -38,6 +40,7 @@ pub const ALL: &[&str] = &[
     SELECTION_CHANGED,
     LAYER_ACTIVATED,
     PANEL_INPUT,
+    PANEL_RESIZED,
     DIALOG_INPUT,
     DIALOG_CLOSED,
     ACTION_TRIGGERED,
@@ -142,6 +145,17 @@ pub struct InputEvent {
     pub value: Value,
     #[serde(default)]
     pub modifiers: Modifiers,
+}
+
+/// `panel.resized`: the size of a panel's content, in points, when PhotoCraft first draws the
+/// panel and whenever it changes. A plug-in laying out with its own toolkit lays the panel out at
+/// this width, so what it draws as images fits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelResized {
+    pub panel_id: String,
+    pub width: f32,
+    pub height: f32,
 }
 
 /// `dialog.closed`.
