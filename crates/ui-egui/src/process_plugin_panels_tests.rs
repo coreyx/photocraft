@@ -82,6 +82,20 @@ fn inputs(sent: &Sent) -> Vec<Value> {
         .collect()
 }
 
+/// The `panel.resized` events sent, as `(panelId, width, height)`.
+fn resized(sent: &Sent) -> Vec<(String, f64, f64)> {
+    sent.lock()
+        .unwrap()
+        .iter()
+        .filter_map(|(_, f)| match &f.header {
+            Header::Event { topic, data } if topic == "panel.resized" => {
+                Some((data["panelId"].as_str()?.to_string(), data["width"].as_f64()?, data["height"].as_f64()?))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn window_item(app: &PhotocraftApp, id: &str) -> Option<crate::menus::MenuItem> {
     crate::menus::menu_items(app).into_iter().find(|i| i.id == format!("window.panel.{id}"))
 }
@@ -102,6 +116,33 @@ fn a_registered_panel_is_docked_drawn_and_sends_input() {
     let input = inputs(&sent);
     assert_eq!(input.len(), 1);
     assert_eq!((input[0]["owner"].as_str(), input[0]["nodeId"].as_str(), input[0]["kind"].as_str()), (Some("main"), Some("go"), Some("click")));
+}
+
+/// A plug-in laying out with its own toolkit needs the panel's width, or what it draws as images
+/// runs past the panel's edge (spec `generate-panel-rows-fit`).
+#[test]
+fn a_panel_tells_its_plugin_its_size() {
+    let (mut app, sent) = app();
+    register(&mut app, "main", "Sample Panel").unwrap();
+    let mut h = Harness::builder().with_size(vec2(1440.0, 1000.0)).with_max_steps(64).build_eframe(move |cc| {
+        PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
+        app
+    });
+    h.run_steps(8);
+    let first = resized(&sent);
+    assert_eq!(first.len(), 1, "{first:?}");
+    let (panel, width, height) = first[0].clone();
+    assert_eq!(panel, "main");
+    assert!((100.0..=1440.0).contains(&width) && height > 0.0, "{width} x {height}");
+
+    h.run_steps(4);
+    assert_eq!(resized(&sent).len(), 1, "an unchanged size isn't sent again");
+
+    crate::panels::request_dock_width(&h.ctx, (width as f32) + 80.0);
+    h.run_steps(8);
+    let all = resized(&sent);
+    let last = all.last().unwrap();
+    assert!(all.len() > 1 && last.1 > width + 40.0, "a wider dock is sent: {all:?}");
 }
 
 #[test]
