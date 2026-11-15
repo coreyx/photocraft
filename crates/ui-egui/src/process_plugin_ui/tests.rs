@@ -209,6 +209,33 @@ fn hidden_and_disabled_widgets_send_nothing() {
     assert!(h.state().events.is_empty());
 }
 
+/// The strength row of Krita AI Diffusion's Generate panel: a slider with a spin box, then two
+/// tool buttons. The slider takes what the buttons leave (spec `generate-panel-rows-fit`).
+#[test]
+fn a_slider_leaves_room_for_the_buttons_after_it() {
+    let row = Node::new("row", WidgetKind::Row)
+        .child(Node::new("strength", WidgetKind::SliderSpin).prop("min", 0).prop("max", 100).prop("value", 100))
+        .child(Node::new("control", WidgetKind::ToolButton).prop("text", "Control"))
+        .child(Node::new("region", WidgetKind::ToolButton).prop("text", "Region"));
+    let state = State { tree: Tree::new(Node::new("root", WidgetKind::Column).child(row)).unwrap(), images: ImageCache::default(), events: Vec::new() };
+    let mut h = Harness::builder().with_size(vec2(300.0, 200.0)).build_ui_state(
+        |ui, s: &mut State| {
+            if !ui.ctx().fonts(|f| f.families().contains(&egui::FontFamily::Name("medium".into()))) {
+                return;
+            }
+            super::render::show(ui, P, "panel", &mut s.tree, &mut s.images, false);
+        },
+        state,
+    );
+    crate::PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+    h.run_steps(6);
+    let edge = h.ctx.content_rect().right();
+    for label in ["Control", "Region"] {
+        let rect = h.get_by_label(label).rect();
+        assert!(rect.right() <= edge + 0.5, "{label} ends at {} past {edge}", rect.right());
+    }
+}
+
 /// A context menu the user dismissed by clicking elsewhere leaves a local `open: false`. When the
 /// plug-in removes that popup and later opens a menu under the same id, the new one shows.
 #[test]
