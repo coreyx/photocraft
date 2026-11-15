@@ -41,6 +41,8 @@ impl Tree {
     /// Apply one patch from the plug-in. A failed patch leaves the tree as it was.
     pub fn apply(&mut self, patch: Patch) -> Result<(), String> {
         let mut root = self.root.clone();
+        // Ids of removed nodes, whose local values go once the patch has applied.
+        let mut removed = Vec::new();
         match patch {
             Patch::Replace { node } => {
                 root = node;
@@ -67,7 +69,8 @@ impl Tree {
                 if root.id == id {
                     return Err("the root can't be removed".into());
                 }
-                take(&mut root, &id).ok_or_else(|| format!("no widget '{id}'"))?;
+                let node = take(&mut root, &id).ok_or_else(|| format!("no widget '{id}'"))?;
+                ids(&node, &mut removed);
             }
             Patch::Move { id, parent, index } => {
                 if root.id == id {
@@ -83,6 +86,11 @@ impl Tree {
         }
         root.validate()?;
         self.root = root;
+        if !removed.is_empty() {
+            // A node the plug-in inserts again under the same id (a menu reopened after the user
+            // dismissed it) shows as the plug-in sends it, not as the user left the removed one.
+            self.local.retain(|(node_id, _), _| !removed.contains(node_id));
+        }
         Ok(())
     }
 
@@ -96,6 +104,14 @@ impl Tree {
             stack.extend(node.children.iter());
         }
         None
+    }
+}
+
+/// The ids of `node` and everything under it.
+fn ids(node: &Node, out: &mut Vec<String>) {
+    out.push(node.id.clone());
+    for child in &node.children {
+        ids(child, out);
     }
 }
 
