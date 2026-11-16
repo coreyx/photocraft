@@ -308,7 +308,7 @@ layouts (`row`, `column`, `grid`, `form`, `group`, `collapsible`, `tabs`, `stack
 (`button`, `toolButton`, `toggleButton`, `splitButton`, `checkbox`, `switch`, `radioGroup`,
 `combo`, `slider`, `spin`, `sliderSpin`, `lineEdit`, `textEdit`, `pathField`), collections
 (`list`, `thumbGrid`, `repeater`) and overlays (`popup`, `menu`). Common props are `visible`,
-`enabled`, `tooltip` and `grow`. Images and icons are `"image:<hash>"` (sent once with
+`enabled`, `tooltip`, `grow` and `hover`. Images and icons are `"image:<hash>"` (sent once with
 `image.put`) or `"icon:<name>"` (PhotoCraft's own icons). `widget::gallery()` is a tree with one
 widget of every kind.
 
@@ -321,6 +321,12 @@ sent as a `key` event, its name as the value and the modifiers with the event, i
 what the widget would do with it: a text field takes them while it has focus, a list while the
 pointer is over it. A plug-in uses this for its own shortcuts, such as moving through the
 `completions` of a text field (and setting `completionIndex`).
+
+A widget with `hover: true` (default false) reports the pointer: PhotoCraft sends a `hover` input
+with `true` when the pointer moves onto the widget's drawn area and `false` when it moves off. It
+also sends `false` when the widget is hidden while the pointer is over it. A widget inserted
+again after its removal starts as not hovered. Other widgets send no `hover` input. A plug-in
+laying out with its own toolkit uses it for what that toolkit shows only on hover.
 
 ## Actions
 

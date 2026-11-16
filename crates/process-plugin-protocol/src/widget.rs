@@ -7,7 +7,8 @@
 //!
 //! Each node's `props` is a JSON object whose meaning depends on its [`WidgetKind`]. Common
 //! props: `text`, `tooltip`, `enabled` (default true), `visible` (default true), `icon` (an
-//! `"image:<hash>"` or `"icon:<name>"` reference), `grow` (share of spare space, default 0).
+//! `"image:<hash>"` or `"icon:<name>"` reference), `grow` (share of spare space, default 0),
+//! `hover` (default false: send `hover` inputs as the pointer moves onto and off the widget).
 //! The per-kind props are listed in `docs/process-plugins.md`.
 
 use serde::{Deserialize, Serialize};
