@@ -3,7 +3,7 @@
 
 use egui::{accesskit::Role, vec2};
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use photocraft_process_plugin_protocol::event::{InputEvent, InputKind};
 use photocraft_process_plugin_protocol::widget::{Node, Patch, WidgetKind, gallery};
 use serde_json::{Map, json};
@@ -234,6 +234,49 @@ fn a_slider_leaves_room_for_the_buttons_after_it() {
         let rect = h.get_by_label(label).rect();
         assert!(rect.right() <= edge + 0.5, "{label} ends at {} past {edge}", rect.right());
     }
+}
+
+/// The upscaler row of Krita AI Diffusion's Upscale panel, with the server's long default name
+/// selected, and the Scale row after it. The drop-down cuts its text rather than widening the
+/// panel's layout, which put every right-aligned item after it past the edge (spec
+/// `upscale-panel-rows-fit`).
+#[test]
+fn a_long_combo_choice_stays_inside_the_panel() {
+    const NAME: &str = "Default (4x_NMKD-Superscale-SP_178000_G.pth)";
+    let combo = Node::new("model", WidgetKind::Combo).prop("value", "default").prop("items", json!([{ "id": "default", "text": NAME }]));
+    // In a row, as upstream puts it after the workspace button: there a `Ui` extends text
+    // rather than wrapping it.
+    let top = Node::new("top", WidgetKind::Row).child(Node::new("workspace", WidgetKind::ToolButton).prop("text", "Upscale")).child(combo);
+    let row = Node::new("row", WidgetKind::Row)
+        .child(Node::new("factor", WidgetKind::Label).prop("text", "Factor").prop("grow", true))
+        .child(Node::new("scale", WidgetKind::Spin).prop("min", 1).prop("max", 4).prop("value", 2).prop("prefix", "Scale: "));
+    let root = Node::new("root", WidgetKind::Column).child(top).child(row);
+    let state = State { tree: Tree::new(root).unwrap(), images: ImageCache::default(), events: Vec::new() };
+    let mut h = Harness::builder().with_size(vec2(300.0, 200.0)).build_ui_state(
+        |ui, s: &mut State| {
+            if !ui.ctx().fonts(|f| f.families().contains(&egui::FontFamily::Name("medium".into()))) {
+                return;
+            }
+            // As a panel's body draws it (`process_plugin_panels.rs`).
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                super::render::show(ui, P, "panel", &mut s.tree, &mut s.images, false);
+            });
+        },
+        state,
+    );
+    crate::PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::ALL[0]);
+    h.run_steps(6);
+    let edge = h.ctx.content_rect().right();
+    let combo = h.get_by_role(Role::ComboBox);
+    assert!(combo.rect().right() <= edge + 0.5, "the drop-down ends at {} past {edge}", combo.rect().right());
+    assert_eq!(combo.accesskit_node().value().as_deref(), Some(NAME), "a screen reader still hears the whole name");
+    let spin = h.get_by_role(Role::SpinButton);
+    assert!(spin.rect().right() <= edge + 0.5, "the spin box ends at {} past {edge}", spin.rect().right());
+    // The cut name shows whole on hover.
+    let before = h.query_all_by_label(NAME).count();
+    h.get_by_role(Role::ComboBox).hover();
+    h.run_steps(30);
+    assert!(h.query_all_by_label(NAME).count() > before, "hovering shows the whole name");
 }
 
 /// A context menu the user dismissed by clicking elsewhere leaves a local `open: false`. When the
