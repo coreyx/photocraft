@@ -279,6 +279,37 @@ fn a_long_combo_choice_stays_inside_the_panel() {
     assert!(h.query_all_by_label(NAME).count() > before, "hovering shows the whole name");
 }
 
+/// A node with `hover: true` reports the pointer moving onto and off it, once per change, and
+/// moving off when it is hidden under the pointer. Nodes without the prop report nothing (spec
+/// `upscale-target-size-hover`).
+#[test]
+fn a_hover_node_reports_the_pointer_entering_and_leaving() {
+    let root = Node::new("root", WidgetKind::Column)
+        .child(Node::new("factor", WidgetKind::Column).prop("hover", true).child(Node::new("size", WidgetKind::Label).prop("text", "Scale row")))
+        .child(Node::new("other", WidgetKind::Column).child(Node::new("note", WidgetKind::Label).prop("text", "Other row")));
+    let mut h = harness(root);
+    let hovers = |h: &Harness<'_, State>, id: &str| -> Vec<serde_json::Value> {
+        events_of(h, id).into_iter().filter(|e| e.kind == InputKind::Hover).map(|e| e.value.clone()).collect()
+    };
+    let factor = h.get_by_label("Scale row").rect().center();
+    let other = h.get_by_label("Other row").rect().center();
+
+    h.hover_at(factor);
+    h.run_steps(4);
+    assert_eq!(hovers(&h, "factor"), vec![json!(true)], "one hover on entering, none for staying");
+
+    h.hover_at(other);
+    h.run_steps(4);
+    assert_eq!(hovers(&h, "factor"), vec![json!(true), json!(false)], "one more on leaving");
+    assert!(hovers(&h, "other").is_empty(), "a node without the prop reports nothing");
+
+    h.hover_at(factor);
+    h.run_steps(2);
+    h.state_mut().tree.apply(Patch::Set { id: "factor".into(), props: serde_json::from_value(json!({"visible": false})).unwrap() }).unwrap();
+    h.run_steps(2);
+    assert_eq!(hovers(&h, "factor"), vec![json!(true), json!(false), json!(true), json!(false)], "hiding it under the pointer reports leaving");
+}
+
 /// A context menu the user dismissed by clicking elsewhere leaves a local `open: false`. When the
 /// plug-in removes that popup and later opens a menu under the same id, the new one shows.
 #[test]
