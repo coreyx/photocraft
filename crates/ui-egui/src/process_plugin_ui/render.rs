@@ -1040,6 +1040,35 @@ fn item_order(n: &Node, cx: &Cx<'_>) -> Vec<String> {
     }
 }
 
+/// The id under which a list's or grid's area is kept between frames, for [`empty_click`].
+fn empty_area_id(ui: &Ui, n: &Node) -> egui::Id {
+    ui.scope_id().with(("plugin-empty-area", &n.id))
+}
+
+/// A plain click on a list's or grid's empty space, which hits none of its items, clears the
+/// selection of a list allowing several selected items. Qt does this for its Extended-selection
+/// lists, and Krita AI Diffusion's history relies on it to deselect a result and hide its preview.
+///
+/// Call it before the items are drawn: it senses the area the list took on the previous frame,
+/// and the items, registered after it, sit above it and keep the clicks that land on them.
+fn empty_click(ui: &Ui, n: &Node, cx: &mut Cx<'_>, area_id: egui::Id) {
+    let Some(area) = ui.data(|d| d.get_temp::<Rect>(area_id)) else { return };
+    let r = ui.interact(area, area_id, Sense::click());
+    let m = ui.input(|i| i.modifiers);
+    if !r.clicked() || m.shift || m.command || m.alt || text(n, "selectionMode") != "multi" || selected_ids(n, cx).is_empty() {
+        return;
+    }
+    cx.set(n, "selected", json!([]));
+    cx.emit(ui, n, InputKind::Select, json!([]));
+}
+
+/// Keep a list's area for the next frame's [`empty_click`]: its rows at the full `width` it was
+/// laid out in, so the rest of a short row counts as empty space too.
+fn remember_area(ui: &Ui, area_id: egui::Id, rows: Rect, width: f32) {
+    let area = Rect::from_min_size(rows.min, vec2(width.max(rows.width()), rows.height()));
+    ui.data_mut(|d| d.insert_temp(area_id, area));
+}
+
 /// Context menu, drag reordering and selection shared by lists and thumbnail grids.
 fn item_interaction(ui: &Ui, n: &Node, cx: &mut Cx<'_>, r: &egui::Response, id: &str, order: &[String]) {
     if r.clicked() {
@@ -1124,6 +1153,9 @@ fn forward_keys(ui: &Ui, n: &Node, cx: &mut Cx<'_>) {
 }
 
 fn list(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
+    let area_id = empty_area_id(ui, n);
+    let width = ui.available_width();
+    empty_click(ui, n, cx, area_id);
     let order = item_order(n, cx);
     let selected = selected_ids(n, cx);
     let by_id: HashMap<&str, &Value> = items(n).iter().map(|i| (item_str(i, "id"), i)).collect();
@@ -1146,6 +1178,7 @@ fn list(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
             }
         })
         .response;
+    remember_area(ui, area_id, r.rect, width);
     // A list has no keyboard focus of its own: its keys apply while the pointer is over it.
     if r.contains_pointer() {
         forward_keys(ui, n, cx);
@@ -1154,6 +1187,9 @@ fn list(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
 }
 
 fn thumb_grid(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
+    let area_id = empty_area_id(ui, n);
+    let width = ui.available_width();
+    empty_click(ui, n, cx, area_id);
     let order = item_order(n, cx);
     let selected = selected_ids(n, cx);
     let size = num(n, "thumbSize", 96.0).clamp(16.0, 512.0) as f32;
@@ -1208,6 +1244,7 @@ fn thumb_grid(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
             }
         })
         .response;
+    remember_area(ui, area_id, r.rect, width);
     if r.contains_pointer() {
         forward_keys(ui, n, cx);
     }
