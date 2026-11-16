@@ -367,6 +367,56 @@ fn lists_forward_keys_and_grids_show_headers() {
     assert_eq!(keys, vec![json!("Delete"), json!("Space")]);
 }
 
+/// A plain primary click at screen point `p`, as the user makes one.
+fn click_at(h: &mut Harness<'static, State>, p: egui::Pos2) {
+    h.event(egui::Event::PointerMoved(p));
+    h.run_steps(1);
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE });
+        h.run_steps(1);
+    }
+    h.run_steps(1);
+}
+
+/// In a list allowing several selected items, a click that hits no item clears the selection, as
+/// in Qt; Krita AI Diffusion's history deselects its result (and hides its preview) this way. A
+/// click on an item still selects it, and a single-selection list keeps its selection.
+#[test]
+fn a_click_on_a_grids_empty_space_clears_its_selection() {
+    let items = json!([
+        {"id": "h1", "kind": "header", "text": "12:00 - a cat"},
+        {"id": "r1", "image": "image:thumb"},
+        {"id": "r2", "image": "image:thumb"}
+    ]);
+    let grid =
+        Node::new("history", WidgetKind::ThumbGrid).prop("items", items).prop("selected", json!(["r1"])).prop("selectionMode", "multi").prop("thumbSize", 48);
+    let mut h = harness(Node::new("root", WidgetKind::Column).child(grid));
+    // The header takes a row of its own; the thumbnails follow it, 48 points apart plus spacing.
+    let header = h.get_by_label("12:00 - a cat").rect();
+    let row_y = header.bottom() + 4.0 + 24.0;
+    let empty = egui::pos2(header.left() + 3.0 * 52.0 + 100.0, row_y);
+    let r2 = egui::pos2(header.left() + 52.0 + 24.0, row_y);
+
+    click_at(&mut h, empty);
+    let sent: Vec<_> = events_of(&h, "history").into_iter().map(|e| (e.kind, e.value.clone())).collect();
+    assert_eq!(sent, vec![(InputKind::Select, json!([]))], "empty space deselects");
+
+    click_at(&mut h, empty);
+    assert_eq!(events_of(&h, "history").len(), 1, "nothing selected, nothing to send");
+
+    click_at(&mut h, r2);
+    let last = events_of(&h, "history").last().map(|e| (e.kind, e.value.clone()));
+    assert_eq!(last, Some((InputKind::Select, json!(["r2"]))), "a thumbnail still selects");
+
+    let list = Node::new("pages", WidgetKind::List)
+        .prop("items", json!([{"id": "a", "text": "Region A"}, {"id": "b", "text": "Region B"}]))
+        .prop("selected", json!(["a"]));
+    let mut h = harness(Node::new("root", WidgetKind::Column).child(list));
+    let a = h.get_by_label("Region A").rect();
+    click_at(&mut h, egui::pos2(a.right() + 200.0, a.center().y));
+    assert!(events_of(&h, "pages").is_empty(), "a single-selection list keeps its selection");
+}
+
 /// REQ-5.5: a 200-thumbnail result list scrolls at 60 fps. Run in release on the reference
 /// machine: `cargo test -p photocraft-ui-egui --release -- --ignored thumbnail_list_timing --nocapture`.
 #[test]
