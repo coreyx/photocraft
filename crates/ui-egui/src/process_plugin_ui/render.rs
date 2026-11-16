@@ -2,7 +2,8 @@
 //! `panel.input` / `dialog.input` events ([`InputEvent`]).
 //!
 //! Every widget kind of the protocol is drawn here; the per-kind props are documented on
-//! [`WidgetKind`]. Common props: `visible` and `enabled` (default true), `tooltip`, `grow`.
+//! [`WidgetKind`]. Common props: `visible` and `enabled` (default true), `tooltip`, `grow`, and
+//! `hover` (default false), which sends a `hover` input as the pointer moves onto or off it.
 //! A change the user makes shows at once from the tree's local values (see [`super::Tree`]).
 
 use std::collections::HashMap;
@@ -30,6 +31,8 @@ struct Cx<'a> {
     /// The tree is drawn in a scroll area that grows with it (a sized dialog's), so the height
     /// below is unbounded although egui reports the visible part as available.
     scrolled: bool,
+    /// Some `hover` node was under the pointer, so hidden subtrees are worth searching for it.
+    any_hovered: bool,
 }
 
 /// Draw `tree` (belonging to `plugin`'s panel or dialog `owner`) and return what the user did.
@@ -50,7 +53,8 @@ pub fn show(ui: &mut Ui, plugin: &str, owner: &str, tree: &mut Tree, images: &mu
         stack.extend(n.children.iter());
     }
     let anchors = popups.iter().map(|p| text(p, "anchor").to_string()).collect();
-    let mut cx = Cx { plugin, owner, images, local, menus, anchors, rects: HashMap::new(), events: Vec::new(), scrolled };
+    let any_hovered = local.keys().any(|(_, key)| *key == HOVERED);
+    let mut cx = Cx { plugin, owner, images, local, menus, anchors, rects: HashMap::new(), events: Vec::new(), scrolled, any_hovered };
     node(ui, root, &mut cx);
     for popup in popups {
         show_popup(ui, popup, &mut cx);
@@ -111,7 +115,13 @@ impl Cx<'_> {
 // ----------------------------------------------------------------------------- tree
 
 fn node(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) {
-    if !flag(n, "visible", true) || matches!(n.kind, WidgetKind::Menu | WidgetKind::Popup) {
+    if matches!(n.kind, WidgetKind::Menu | WidgetKind::Popup) {
+        return;
+    }
+    if !flag(n, "visible", true) {
+        if cx.any_hovered {
+            unhover(ui, n, cx);
+        }
         return;
     }
     let enabled = flag(n, "enabled", true);
@@ -122,6 +132,43 @@ fn node(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) {
     };
     if cx.anchors.contains(&n.id) {
         cx.rects.insert(n.id.clone(), response.rect);
+    }
+    if flag(n, "hover", false) {
+        report_hover(ui, n, cx, ui.rect_contains_pointer(response.rect));
+    }
+}
+
+/// The local value that remembers a `hover` node is under the pointer. The plug-in never sets it.
+const HOVERED: &str = "hovered";
+
+/// Tell the plug-in when the pointer moves onto or off `n`, a node with `hover: true`.
+///
+/// A plug-in that lays out with its own toolkit draws nothing here itself, so it can only show
+/// what that toolkit shows on hover (Krita AI Diffusion's target size under its Upscale scale
+/// slider) if it hears where the pointer is. Only changes are sent, not every frame.
+fn report_hover(ui: &Ui, n: &Node, cx: &mut Cx<'_>, inside: bool) {
+    let key = (n.id.clone(), HOVERED);
+    if cx.local.contains_key(&key) == inside {
+        return;
+    }
+    if inside {
+        cx.local.insert(key, Value::Bool(true));
+        cx.any_hovered = true;
+    } else {
+        cx.local.remove(&key);
+    }
+    cx.emit(ui, n, InputKind::Hover, Value::Bool(inside));
+}
+
+/// `n` is hidden, so nothing in it is under the pointer: tell the plug-in about any node in it
+/// that was.
+fn unhover(ui: &Ui, n: &Node, cx: &mut Cx<'_>) {
+    let mut stack = vec![n];
+    while let Some(n) = stack.pop() {
+        if cx.local.contains_key(&(n.id.clone(), HOVERED)) {
+            report_hover(ui, n, cx, false);
+        }
+        stack.extend(n.children.iter());
     }
 }
 
