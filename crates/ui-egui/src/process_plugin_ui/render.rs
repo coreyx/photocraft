@@ -747,7 +747,11 @@ fn combo(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     let shown = items(n).iter().find(|i| item_str(i, "id") == value).map(|i| item_str(i, "text").to_string()).unwrap_or_default();
     let width = num(n, "width", f64::from(ui.available_width().min(220.0))) as f32;
     let mut chosen = None;
-    let r = craft_ui::ComboBox::from_id_salt(("plugin-combo", &n.id)).selected_text(shown).width(width).show_ui(ui, |ui| {
+    // craft-ui's `width` is only a minimum, and in a row the selected text extends rather than
+    // wraps. Uncut, a long choice (an upscaler's file name) made the drop-down wider than the
+    // panel; egui widened the layout region to fit it, and `row()` then put the right-aligned
+    // items of every later row past the visible edge. The list itself still shows each in full.
+    let r = craft_ui::ComboBox::from_id_salt(("plugin-combo", &n.id)).selected_text(shown.clone()).width(width).truncate().show_ui(ui, |ui| {
         for item in items(n) {
             match item_str(item, "kind") {
                 "separator" => {
@@ -769,7 +773,22 @@ fn combo(ui: &mut Ui, n: &Node, cx: &mut Cx<'_>) -> egui::Response {
     if let Some(id) = chosen.filter(|id| *id != value) {
         cx.change(ui, n, "value", json!(id));
     }
+    // A cut choice shows whole on hover, unless the plug-in gave the drop-down a tooltip of its
+    // own, which `node()` shows instead.
+    let tooltip = prop(n, "tooltip").and_then(Value::as_str).is_some_and(|t| !t.is_empty());
+    if !tooltip && combo_text_is_cut(ui, &shown, r.response.rect.width()) {
+        return r.response.on_hover_text(shown);
+    }
     r.response
+}
+
+/// Whether `shown` is wider than a drop-down `width` wide leaves room for, beside its arrow,
+/// so the drop-down drew it cut with "…".
+fn combo_text_is_cut(ui: &Ui, shown: &str, width: f32) -> bool {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let text = ui.fonts_mut(|f| f.layout_no_wrap(shown.to_string(), font, egui::Color32::PLACEHOLDER)).size().x;
+    let room = width - ui.spacing().button_padding.x * 2.0 - ui.spacing().icon_width - ui.spacing().item_spacing.x;
+    text > room
 }
 
 // ----------------------------------------------------------------------------- numbers
