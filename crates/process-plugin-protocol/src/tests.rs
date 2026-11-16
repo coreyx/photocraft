@@ -209,6 +209,15 @@ fn input_events_default_their_modifiers() {
 }
 
 #[test]
+fn hover_input_has_the_documented_wire_shape() {
+    let value = json!({"owner": "main", "nodeId": "row", "kind": "hover", "value": true});
+    let input: InputEvent = serde_json::from_value(value).unwrap();
+    assert_eq!(input.kind, InputKind::Hover);
+    assert_eq!(input.value, json!(true));
+    assert_eq!(serde_json::to_value(InputKind::Hover).unwrap(), json!("hover"));
+}
+
+#[test]
 fn typed_results_decode() {
     let welcome = json!({"hostVersion": "0.20.1", "protocol": 1, "locale": "ja", "dataDir": "d", "logDir": "l", "theme": {"dark": true}});
     let welcome = message::result::<method::Hello>(&welcome).unwrap();

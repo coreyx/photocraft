@@ -131,6 +131,11 @@ pub enum InputKind {
     Pointer,
     /// The widget gained or lost focus (`value` is a boolean).
     Focus,
+    /// The pointer moved onto (`value` true) or off (`value` false) a widget whose `hover` prop
+    /// is true; `false` also comes when such a widget is hidden while hovered. Sent only for
+    /// those widgets, so a plug-in drawing with its own toolkit can show there what it shows on
+    /// hover.
+    Hover,
 }
 
 /// `panel.input` and `dialog.input`.
